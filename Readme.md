@@ -1,0 +1,1 @@
+Econformal is a python package for combining econometrics and conformal inference
