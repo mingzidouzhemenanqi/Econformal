@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
-import scr.Econformal
+import econformal
 
-from scr.Econformal.tools import generate_data
+from econformal.tools import generate_data
 
 
 #n_zises = [4,100,200]
@@ -16,7 +16,7 @@ coverages = [0.9]
 for coverage_value in coverages:
     for n_zise in n_zises:
         for pre_period in pre_periods:
-            data = scr.Econformal.tools.generate_data.generate_test_panel_data(
+            data = econformal.tools.generate_data.generate_test_panel_data(
                 n_ids=n_zise,
                 n_treated=int(n_zise*0.5),
                 start_year=2010,
@@ -27,7 +27,7 @@ for coverage_value in coverages:
             )
 
             # 用户初始化模型
-            model = scr.Econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
+            model = econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
             nulls = np.linspace(-5, 5, 100)
 
             # 计量模型拟合

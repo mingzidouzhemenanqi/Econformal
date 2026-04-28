@@ -1,15 +1,15 @@
 
 import pandas as pd
 import numpy as np
-import scr.Econformal
+import econformal
 
-from scr.Econformal.tools.generate_data import generate_test_panel_data
+from econformal.tools.generate_data import generate_test_panel_data
 
 
 ####### SC ########
 '''
 # 用户初始化模型
-model = scr.Econformal.base.Econformal(data=data, time='year', id='state', y_col='cigsale', x_cols=[], treat_col='treat')
+model = econformal.base.Econformal(data=data, time='year', id='state', y_col='cigsale', x_cols=[], treat_col='treat')
 nulls = np.linspace(-60, 20, 100)
 
 # 计量模型拟合
@@ -33,7 +33,7 @@ data = generate_test_panel_data(
 print(data.head())
 
 # 用户初始化模型
-model = scr.Econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
+model = econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
 nulls = np.linspace(-10, 10, 100)
 
 # 计量模型拟合
@@ -47,7 +47,7 @@ fig.show()
 
 """SDID"""
 """
-data = scr.Econformal.tools.generate_data.generate_test_panel_data(
+data = econformal.tools.generate_data.generate_test_panel_data(
         n_ids=200,
         n_treated=100,
         start_year=2010,
@@ -59,7 +59,7 @@ data = scr.Econformal.tools.generate_data.generate_test_panel_data(
 print(data.head())
 
 # 用户初始化模型
-model = scr.Econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
+model = econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
 nulls = np.linspace(-10, 10, 100)
 
 # 计量模型拟合
