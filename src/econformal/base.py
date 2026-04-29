@@ -6,7 +6,6 @@ import warnings
 warnings.filterwarnings('ignore')
 from matplotlib import style
 style.use("ggplot")
-from typing import Dict, Any
 
 from .tools.model_registration import get_conformal_model, get_econ_model
 from .tools import check, plot
@@ -212,10 +211,105 @@ class Econformal:
         return data
     
     def _merge_results(self):
-
-        # 将index的值作为time列
+        """
+        合并共形推断区间和计量模型结果
+        
+        注意：该方法会直接修改 self.conformal_interval（添加time列并重置索引）
+        这是设计意图，因为合并后不再需要原始的 conformal_interval
+        """
+        
+        # ========== 1. 空值检查 ==========
+        if self.conformal_interval is None:
+            raise RuntimeError("请先调用 conformal_inference_fit() 计算共形推断区间")
+        
+        if self.econ_results is None:
+            raise RuntimeError("请先调用 econ_fit() 拟合计量模型")
+        
+        # ========== 2. 验证 conformal_interval ==========
+        if self.conformal_interval.empty:
+            raise ValueError("共形推断区间为空，无法合并")
+        
+        if self.conformal_interval.index.has_duplicates:
+            raise ValueError(
+                f"共形推断区间的索引（时间列）存在重复值，这会导致合并结果异常。"
+                f"重复值: {self.conformal_interval.index[self.conformal_interval.index.duplicated()].unique()}"
+            )
+        
+        if self.conformal_interval.index.isna().any():
+            raise ValueError("共形推断区间的索引（时间列）包含 NaN 值")
+        
+        # ========== 3. 添加时间列（直接修改，节省内存）==========
         self.conformal_interval[self.time] = self.conformal_interval.index
-        # 重置index
         self.conformal_interval.reset_index(drop=True, inplace=True)
+        
+        # ========== 4. 验证 econ_results ==========
+        if self.econ_results.empty:
+            raise ValueError("计量模型结果为空，无法合并")
+        
+        if self.time not in self.econ_results.columns:
+            raise ValueError(
+                f"计量模型结果中缺少时间列 '{self.time}'。"
+                f"当前列名: {list(self.econ_results.columns)}"
+            )
+        
+        if self.econ_results[self.time].duplicated().any():
+            raise ValueError(
+                f"计量模型结果的时间列 '{self.time}' 存在重复值，这会导致合并结果异常。"
+                f"重复值: {self.econ_results[self.time][self.econ_results[self.time].duplicated()].unique()}"
+            )
+        
+        if self.econ_results[self.time].isna().any():
+            raise ValueError(f"计量模型结果的时间列 '{self.time}' 包含 NaN 值")
+        
+        # ========== 5. 统一时间列数据类型 ==========
+        conformal_dtype = self.conformal_interval[self.time].dtype
+        econ_dtype = self.econ_results[self.time].dtype
+        
+        if conformal_dtype != econ_dtype:
+            # 尝试统一类型
+            unified_dtype = self._infer_common_time_dtype(conformal_dtype, econ_dtype)
+            
+            import warnings
+            warnings.warn(
+                f"共形推断区间和计量模型结果的时间列类型不一致：\n"
+                f"  - conformal_interval['{self.time}']: {conformal_dtype}\n"
+                f"  - econ_results['{self.time}']: {econ_dtype}\n"
+                f"将自动统一为: {unified_dtype}"
+            )
+            
+            self.conformal_interval[self.time] = self.conformal_interval[self.time].astype(unified_dtype)
+            self.econ_results[self.time] = self.econ_results[self.time].astype(unified_dtype)
+        
+        # ========== 6. 执行合并 ==========
+        return pd.merge(
+            self.conformal_interval,
+            self.econ_results,
+            on=self.time,
+            how='outer'
+        )
 
-        return pd.merge(self.conformal_interval, self.econ_results, on=self.time, how='right')
+    def _infer_common_time_dtype(self, dtype1, dtype2):
+        """
+        推断两个时间列的公共数据类型
+        
+        规则：
+        1. 如果都是数值类型，使用精度更高的
+        2. 如果一个是数值一个是字符串，优先使用字符串（保留原始格式）
+        3. 其他情况使用 object
+        """
+        import numpy as np
+        import pandas as pd
+        
+        # 都是数值类型
+        if pd.api.types.is_numeric_dtype(dtype1) and pd.api.types.is_numeric_dtype(dtype2):
+            return np.result_type(dtype1, dtype2)
+        
+        # 一个是数值，一个是字符串/对象
+        if pd.api.types.is_numeric_dtype(dtype1) and pd.api.types.is_string_dtype(dtype2):
+            return dtype2  # 使用字符串类型
+        
+        if pd.api.types.is_string_dtype(dtype1) and pd.api.types.is_numeric_dtype(dtype2):
+            return dtype1  # 使用字符串类型
+        
+        # 默认使用 object
+        return object
