@@ -1,9 +1,37 @@
 [project]
 name = "econformal"
 version = "0.1.0"
-description = "Add your description here"
+description = "计量经济学模型共形推断工具包 | Conformal Inference Toolkit for Econometric Models"
 readme = "README.md"
 requires-python = ">=3.14"
+license = {text = "MIT"}
+authors = [
+    {name = "Forry Wu", email = "your.email@example.com"}
+]
+maintainers = [
+    {name = "Forry Wu", email = "your.email@example.com"}
+]
+keywords = [
+    "econometrics",
+    "conformal inference",
+    "causal inference",
+    "DID",
+    "synthetic control",
+    "panel data",
+    "statistics",
+    "machine learning",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Financial and Insurance Industry",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Office/Business :: Financial",
+]
 dependencies = [
     "pandas",
     "numpy",
@@ -15,6 +43,12 @@ dependencies = [
     "cvxpy",
     "tqdm",
 ]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/econformal"
+Documentation = "https://github.com/yourusername/econformal#readme"
+Repository = "https://github.com/yourusername/econformal.git"
+Issues = "https://github.com/yourusername/econformal/issues"
 
 [build-system]
 requires = ["hatchling"]

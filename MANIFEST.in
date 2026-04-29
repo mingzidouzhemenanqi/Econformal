@@ -1,0 +1,39 @@
+# MANIFEST.in - 控制上传到 PyPI 的文件
+
+# 包含 README.md（通常需要在 PyPI 显示）
+include README.md
+
+# 包含 LICENSE 文件（如果有）
+# include LICENSE
+
+# 排除不需要上传的文件
+exclude .python-version
+exclude uv.lock
+exclude example.py
+exclude param search.py
+
+# 排除 .git 相关文件和文件夹
+recursive-exclude .git *
+recursive-exclude .github *
+
+# 排除 IDE 配置文件
+recursive-exclude .vscode *
+recursive-exclude .idea *
+
+# 排除测试文件（如果有 tests 目录）
+recursive-exclude tests *
+
+# 排除 __pycache__ 和编译文件
+recursive-exclude * __pycache__
+recursive-exclude * *.py[cod]
+
+# 排除虚拟环境目录
+recursive-exclude .venv *
+recursive-exclude venv *
+recursive-exclude env *
+
+# 排除日志和临时文件
+recursive-exclude * *.log
+recursive-exclude * ~*
+recursive-exclude * *.bak
+recursive-exclude * *.swp
