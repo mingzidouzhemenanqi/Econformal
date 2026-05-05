@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 from linearmodels import PanelOLS
-from statsmodels.stats.outliers_influence import variance_inflation_factor
 # from sklearn.base import BaseEstimator, RegressorMixin
 from typing import List, Tuple
 '''
@@ -22,12 +21,12 @@ class Econometric():
         拟合事件研究模型
         
         参数:
-        data: 包含所有变量的DataFrame
-        time: 时间列名
-        id: 个体ID列名
-        y_col: 因变量列名
-        treat_col: 处理变量列名
-        x_cols: 协变量列名列表
+        data: dataframe  包含所有变量的DataFrame
+        time: str 时间列名
+        id: str 个体ID列名
+        y_col: str 因变量列名
+        treat_col: str 处理变量列名
+        x_cols: list 协变量列名列表
         """
         ########### 数据检查 #############
         # 0. 自动识别event_window，默认窗口期为全样本周期

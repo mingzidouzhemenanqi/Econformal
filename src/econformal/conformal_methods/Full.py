@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from typing import Tuple, Optional
 from ..tools import check, plot
 
 class Conformal():
@@ -40,7 +39,6 @@ class Conformal():
         time_list, p_value_matrix = self.preprocess_data()
 
         '1. 共形推断主逻辑，计算p_value_matrix'
-
         self.p_value_matrix = self.fit(time_list, p_value_matrix)
 
         '2. 用p_value_matrix从nulls中找出上下界，组成置信区间'
@@ -73,7 +71,6 @@ class Conformal():
         for i, treat_time_conformal in enumerate(tqdm(time_list, desc='p_value_matrix计算: ')):
             
             # 提取self.data中，self.time列的小于self.treat_time的行,且self.time等于treat_time_conformal的行，作为准增强数据（y_new在nulls的循环中修改即可）
-
             conformal_data_pro_0 = self.data[(self.data[self.time] < self.treat_time) | (self.data[self.time] == treat_time_conformal)]
             
             '第二层循环，遍历nulls对应行的每一个null'
@@ -87,7 +84,7 @@ class Conformal():
                 conformal_data_pro.loc[conformal_data_pro[self.id].isin(self.target_id_list) & (conformal_data_pro[self.time] == treat_time_conformal), self.y_col] -= null
                 
                 # 使用增强数据训练模型            
-                fit_econmodel_data = self.econ_model.fit_econmodel(data=conformal_data_pro, time=self.time, id=self.id, y_col=self.y_col, treat_col=self.treat_col, coverage=self.coverage, train_mode=1)
+                fit_econmodel_data = self.econ_model.fit_econmodel(data=conformal_data_pro, time=self.time, id=self.id, y_col=self.y_col, treat_col=self.treat_col, coverage=self.coverage)
 
                 # 获取处理效应
                 residuals = fit_econmodel_data[['effect']]

@@ -1,4 +1,3 @@
-
 import numpy as np
 import pandas as pd
 
@@ -74,21 +73,20 @@ class Econformal:
         # 用户输入的共形推断模型是否可以使用
 
 
-
         ########### 置信区间范围参数预设 ##########
         # 覆盖率保存为类变量
         self.coverage = coverage
         # 预先设置置信区间列名
 
         # 预先设置共形推断区间列名
-        self.ci_upper_col = f"{int(coverage*100)}%_ci_upper"
-        self.ci_lower_col = f"{int(coverage*100)}%_ci_lower"
+        self.ci_upper_col = f"{int(self.coverage*100)}%_ci_upper"
+        self.ci_lower_col = f"{int(self.coverage*100)}%_ci_lower"
 
         ########### 执行计量经济学模型拟合 ##########
-        self.econ_results = self.econ_fit(econ_model=econ_model, coverage = coverage)    # 该方法最后生成类变量self.econ_results
+        self.econ_results = self.econ_fit(econ_model=econ_model, coverage = self.coverage)    # 该方法最后生成类变量self.econ_results
 
         ########### 执行共形推断进行区间预测 ##########
-        self.conformal_interval = self.conformal_inference_fit(econ_model=econ_model, conformal_model=conformal_model, nulls=nulls, coverage=coverage)    # 该方法最后生成类变量self.conformal_interval
+        self.conformal_interval = self.conformal_inference_fit(econ_model=econ_model, conformal_model=conformal_model, nulls=nulls)    # 该方法最后生成类变量self.conformal_interval
 
         ########### 将共形推断预测区间与econ_results合并 ##########
         self.results = self._merge_results()
@@ -96,7 +94,7 @@ class Econformal:
         return self.results
 
     """计量经济学模型拟合方法"""
-    def econ_fit(self, econ_model: str, coverage: float, **kwargs):
+    def econ_fit(self, econ_model: str, **kwargs):
         '''
         econ_model: 需要调用的计量经济模型
         y_col: 因变量列名
@@ -120,16 +118,11 @@ class Econformal:
         event_time   处理前1期为-1
         prediction   如果是DID这种直接出effcet的方法，为0
         effect
-        std_error    暂时为0
-        p-value      暂时为0
-        置信区间下界  暂时为0
-        置信区间上界  暂时为0
+        std_error
+        p-value
+        置信区间下界
+        置信区间上界
         """
-        # 拟合模型模式：0:仅使用训练集训练数据；1:使用所有样本数据训练。默认为1
-        train_mode = 1
-        if econ_model == 'SC':
-            train_mode = 0   # SC模型仅需要处理前数据进行训练，因此需要将train_mode设为0
-
         econ_results = self.econ_model.fit_econmodel(
                             data=self.data,
                             time=self.time,
@@ -137,21 +130,19 @@ class Econformal:
                             y_col=self.y_col,
                             treat_col=self.treat_col,
                             x_cols=self.x_cols,
-                            coverage=coverage,
-                            train_mode = train_mode # 0:仅使用训练集训练数据；1:使用所有样本数据训练。默认为1
+                            coverage=self.coverage,
                         )
         
 
         return econ_results
         
-    def conformal_inference_fit(self, conformal_model: str, coverage: float, nulls:list=None, **kwargs):
+    def conformal_inference_fit(self, conformal_model: str, nulls:list=None, **kwargs):
         """
         执行共形推断计算置信区间
         0. 获取误差率，并检查是否已经拟合模型
         1. 检查nulls参数是否为None，若为None，则调用get_nulls()方法获取nulls
         2. 根据用户输入的模型，调用相应的共形推断模型
         3. 返回模型结果，存于self.predictions
-        
         """
         #if self.predictions is None:
         #    raise RuntimeError("请先使用econ_fit()方法拟合计量模型")
@@ -297,8 +288,6 @@ class Econformal:
         2. 如果一个是数值一个是字符串，优先使用字符串（保留原始格式）
         3. 其他情况使用 object
         """
-        import numpy as np
-        import pandas as pd
         
         # 都是数值类型
         if pd.api.types.is_numeric_dtype(dtype1) and pd.api.types.is_numeric_dtype(dtype2):

@@ -1,21 +1,25 @@
 # split_conformal.py
 import numpy as np
 import pandas as pd
+from ..tools import check
 
 class Conformal():
     """
     拆分共形推断实现
     """
-    def __init__(self, econ_model, data, time, id, treat_time, y_col, target_id, coverage, splite_rate=70, nulls=None, **kwargs):
+    def __init__(self, econ_model, data, time, id, y_col, treat_col, coverage, splite_rate=70, nulls=None, **kwargs):
         self.econ_model = econ_model
         self.coverage = coverage
         self.data = data
         self.time = time
         self.id = id
-        self.treat_time = treat_time
+        self.treat_col = treat_col
         self.y_col = y_col
-        self.target_id = target_id
         self.splite_rate = splite_rate
+
+        # 自动提取处理时间和处理个体（与 Full Conformal 保持一致）
+        self.target_id = check.get_treated_individuals(data=data, id=id, time=time, treat_col=treat_col)
+        self.treat_time = check.get_first_treatment_year(data=data, id=id, time=time, treat_col=treat_col)
 
 
     def compute_conformal_interval(self):
@@ -85,8 +89,8 @@ class Conformal():
     
     def _get_residuals(self, data, treat_time):
 
-        data_fit = self.econ_model.fit_econmodel(data, self.time, self.id, treat_time, self.y_col, self.target_id)
-        data_fit['residuals'] = data_fit[self.target_id] - data_fit['predictons']
+        data_fit = self.econ_model.fit_econmodel(data, self.time, self.id, self.y_col, self.treat_col, self.coverage, train_mode=1)
+        data_fit['residuals'] = data_fit['effect']
 
         # 将['residuals']列中，index大于treat_time的元素提取出
         filtered_data = data_fit.loc[data_fit.index >= treat_time, 'residuals']
