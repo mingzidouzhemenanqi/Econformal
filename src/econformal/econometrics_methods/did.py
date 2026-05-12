@@ -28,6 +28,8 @@ class Econometric():
         treat_col: str 处理变量列名
         controls_col: list 协变量列名列表
         """
+        ci_lower_col = f"{int(coverage * 100)}%_conf_lower"
+        ci_upper_col = f"{int(coverage * 100)}%_conf_upper"
         ########### 数据检查 #############
         # 0. 自动识别event_window，默认窗口期为全样本周期
         if event_window is None:
@@ -87,8 +89,8 @@ class Econometric():
                         'effect': effect_dict[t]['effect'],
                         'std_error': effect_dict[t]['std_error'],
                         'p-value': effect_dict[t]['p_value'],
-                        '置信区间下界': effect_dict[t]['ci_lower'],
-                        '置信区间上界': effect_dict[t]['ci_upper']
+                        ci_lower_col: effect_dict[t]['ci_lower'],
+                        ci_upper_col: effect_dict[t]['ci_upper']
                     })
             # 对于被省略的基准期，效应为0
             else:
@@ -97,8 +99,8 @@ class Econometric():
                     'effect': 0,
                     'std_error': 0,
                     'p-value': 1.0,
-                    '置信区间下界': 0,
-                    '置信区间上界': 0
+                    ci_lower_col: 0,
+                    ci_upper_col: 0
                 })
         
         self.results_df = pd.DataFrame(results_list)

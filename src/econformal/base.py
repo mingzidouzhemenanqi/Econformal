@@ -79,8 +79,8 @@ class Econformal:
         # 预先设置置信区间列名
 
         # 预先设置共形推断区间列名
-        self.ci_upper_col = f"{int(self.coverage*100)}%_ci_upper"
-        self.ci_lower_col = f"{int(self.coverage*100)}%_ci_lower"
+        self.ci_lower_col = f"{int(self.coverage * 100)}%_conformal_lower"
+        self.ci_upper_col = f"{int(self.coverage * 100)}%_conformal_upper"
 
         ########### 执行计量经济学模型拟合 ##########
         self.econ_results = self.econ_fit(econ_model=econ_model, coverage = self.coverage)    # 该方法最后生成类变量self.econ_results
