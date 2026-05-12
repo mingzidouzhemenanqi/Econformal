@@ -22,10 +22,10 @@ class Econometric(BaseEstimator):
         id: str 个体 ID 列名
         y_col: str 因变量列名
         treat_col: str 处理变量列名
-        x_cols: list 协变量列名列表
+        controls_col: list 协变量列名列表
     """
     def fit_econmodel(self, data: pd.DataFrame, time: str, id: str, y_col: str, treat_col: str, coverage: float,
-            x_cols: list = None, **kwargs):
+            controls_col: list = None, **kwargs):
 
         """
         返回结果：dataframe

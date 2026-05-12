@@ -1,28 +1,27 @@
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from ..tools import check, plot
+from .conformal_base import ConformalBase
 
-class Conformal():
+class Conformal(ConformalBase):
     """
     完全共形推断实现
 
     """
-    def __init__(self, econ_model, data, time, id, y_col, nulls, treat_col,coverage:float, x_col: list=[], **kwargs):
-        self.econ_model = econ_model
-        self.coverage = coverage
-        self.data = data
-        self.time = time
-        self.id = id
-        self.treat_col = treat_col
-
-        self.y_col = y_col
+    def __init__(self, econ_model, data: pd.DataFrame, time: str, id: str,
+                y_col: str, treat_col: str, coverage: float, 
+                nulls: list,
+                controls_col: list=[], **kwargs):
         self.nulls = nulls
-
-        # 调用函数从data中读取target_id（处理组样本，list）和treat_time（首次处理时间）
-        self.target_id_list = check.get_treated_individuals(data=data, id=id, time=time, treat_col=treat_col)
-        self.treat_time = check.get_first_treatment_year(data=data, id=id, time=time, treat_col=treat_col)
         
+        # 调用父类 __init__，复用所有公共初始化逻辑
+        super().__init__(
+            econ_model=econ_model, data=data,time=time,id=id,
+            y_col=y_col,treat_col=treat_col,
+            coverage=coverage, controls_col=controls_col,
+            **kwargs
+        )
+
 
     def compute_conformal_interval(self):
         """
@@ -49,17 +48,6 @@ class Conformal():
 
         return self.conformal_interval
     
-    def preprocess_data(self):
-
-        # 获取第一层循环变量：时间
-        # 获取self.data中self.time列所有大于等于self.treat_time的值，返回一个列表
-        time_list = self.data.loc[self.data[self.time] >= self.treat_time, self.time].unique()
-
-        # p值空矩阵，用于存储每个null的计算结果，提前生成矩阵提高运算速度。行数为处理后时期长度，列为nulls的长度       
-        p_value_matrix = np.zeros((len(time_list), len(self.nulls)))
-
-        return time_list, p_value_matrix
-
 
     def fit(self, time_list, p_value_matrix):
         """
@@ -117,15 +105,26 @@ class Conformal():
         confidence_interval = np.column_stack((min_values, max_values))
 
         return confidence_interval
-    
+
+    def preprocess_data(self):
+
+        # 获取第一层循环变量：时间
+        # 获取self.data中self.time列所有大于等于self.treat_time的值，返回一个列表
+        time_list = self.data.loc[self.data[self.time] >= self.treat_time, self.time].unique()
+
+        # p值空矩阵，用于存储每个null的计算结果，提前生成矩阵提高运算速度。行数为处理后时期长度，列为nulls的长度       
+        p_value_matrix = np.zeros((len(time_list), len(self.nulls)))
+
+        return time_list, p_value_matrix
+
     def result_to_dataframe(self, confidence_interval, time_list):
         """将结果转换为DataFrame"""
         return pd.DataFrame(
                         confidence_interval,
                         index=time_list,  # 使用排序后的不重复时间作为索引
                         columns=[
-                            f"{int((self.coverage)*100)}%_ci_lower",
-                            f"{int((self.coverage)*100)}%_ci_upper"
+                            f"{int((self.coverage)*100)}%_conformal_lower",
+                            f"{int((self.coverage)*100)}%_conformal_upper"
                         ])
 
     def _get_pvalue_each(self, resid_df):

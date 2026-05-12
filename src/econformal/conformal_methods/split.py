@@ -80,16 +80,15 @@ class Conformal():
 
         """将结果转换为DataFrame"""
         return pd.DataFrame({
-                f"{int(self.coverage*100)}%_ci_lower": lower,
-                f"{int(self.coverage*100)}%_ci_upper": upper},
+                f"{int(self.coverage*100)}%_conformal_lower": lower,
+                f"{int(self.coverage*100)}%_conformal_upper": upper},
                 index=time_list,  # 使用排序后的不重复时间作为索引
                 )
-
 
     
     def _get_residuals(self, data, treat_time):
 
-        data_fit = self.econ_model.fit_econmodel(data, self.time, self.id, self.y_col, self.treat_col, self.coverage, train_mode=1)
+        data_fit = self.econ_model.fit_econmodel(data, self.time, self.id, self.y_col, self.treat_col, self.coverage)
         data_fit['residuals'] = data_fit['effect']
 
         # 将['residuals']列中，index大于treat_time的元素提取出

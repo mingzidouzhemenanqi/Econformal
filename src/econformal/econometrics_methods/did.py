@@ -16,7 +16,7 @@ class Econometric():
         pass
     
     def fit_econmodel(self, data: pd.DataFrame, time: str, id: str, y_col: str, treat_col: str, coverage: float,
-            x_cols: List[str] = None, event_window: Tuple[int, int] = None,  **kwargs):
+            controls_col: List[str] = None, event_window: Tuple[int, int] = None,  **kwargs):
         """
         拟合事件研究模型
         
@@ -26,7 +26,7 @@ class Econometric():
         id: str 个体ID列名
         y_col: str 因变量列名
         treat_col: str 处理变量列名
-        x_cols: list 协变量列名列表
+        controls_col: list 协变量列名列表
         """
         ########### 数据检查 #############
         # 0. 自动识别event_window，默认窗口期为全样本周期
@@ -51,8 +51,8 @@ class Econometric():
         event_cols = [col for col in df.columns if col.startswith('event_')]  # 事件时间虚拟变量列名
         y = df[y_col] # 因变量
         # 准备自变量：事件虚拟变量 + 协变量
-        if x_cols is not None:
-            X = df[event_cols + x_cols]
+        if controls_col is not None:
+            X = df[event_cols + controls_col]
         else:
             X = df[event_cols]
         # 添加常数项

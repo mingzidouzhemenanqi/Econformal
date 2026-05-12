@@ -27,7 +27,7 @@ for coverage_value in coverages:
             )
 
             # 用户初始化模型
-            model = econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
+            model = econformal.base.Econformal(data=data, time='year', id='id', y_col='Y', controls_col=['X1', 'X2', 'X3'], treat_col='Treat')
             nulls = np.linspace(-5, 5, 100)
 
             # 计量模型拟合

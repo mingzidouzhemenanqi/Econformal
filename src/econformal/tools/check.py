@@ -110,7 +110,7 @@ def get_id_code(data, id_col):
 
 
 
-def indenty_panel_data(data, year_col, id_col, y_col, x_cols, treat_col):
+def indenty_panel_data(data, year_col, id_col, y_col, controls_col, treat_col):
     """
     面板数据识别函数
     该函数用于识别面板数据的处理组、处理时间，并新增一个id_code列，用于标识每个观测值。
@@ -120,7 +120,7 @@ def indenty_panel_data(data, year_col, id_col, y_col, x_cols, treat_col):
     year_col : str   - 时间列名
     id_col : str     - 个体ID列名
     y_col : str      - 因变量列名
-    x_cols : list    - 自变量列名列表
+    controls_col : list    - 自变量列名列表
     treat_col : str  - 处理标识列名（0/1二值变量）
     
     返回：
@@ -131,7 +131,7 @@ def indenty_panel_data(data, year_col, id_col, y_col, x_cols, treat_col):
     """
     
     # 1. 基础验证
-    required_cols = [year_col, id_col, y_col, treat_col] + x_cols
+    required_cols = [year_col, id_col, y_col, treat_col] + controls_col
     missing = set(required_cols) - set(data.columns)
     if missing:
         raise ValueError(f"缺失必要列: {missing}")

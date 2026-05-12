@@ -12,14 +12,14 @@ from .tools import check, plot
 
 
 class Econformal:
-    def __init__(self, data: pd.DataFrame, time: str, id: str, y_col: str, x_cols: list, treat_col: str, **kwargs):
+    def __init__(self, data: pd.DataFrame, time: str, id: str, y_col: str, controls_col: list, treat_col: str, **kwargs):
         """
         Econformal初始化，只要求输入数据，并明确变量含义
         data：数据表，要求dataframe
         time：时间变量名
         id：个体变量名
         y_col：因变量名
-        x_cols：控制变量名
+        controls_col：控制变量名
         treat_col：是否处理（0-1变量）
         """
         '''
@@ -30,7 +30,7 @@ class Econformal:
         self.time = time  
         self.id = id   
         self.y_col = y_col
-        self.x_cols = x_cols
+        self.controls_col = controls_col
         self.treat_col = treat_col
 
         # 检查日期是否为int或者时间等可排序类型
@@ -129,7 +129,7 @@ class Econformal:
                             id=self.id,
                             y_col=self.y_col,
                             treat_col=self.treat_col,
-                            x_cols=self.x_cols,
+                            controls_col=self.controls_col,
                             coverage=self.coverage,
                         )
         

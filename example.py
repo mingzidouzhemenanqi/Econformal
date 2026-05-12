@@ -18,12 +18,12 @@ data = pd.read_csv('ignore/data/smoking_panel.csv')
         x_num=3,
         seed=123
     )'''
-model = Econformal(data=data, time='year', id='state', y_col='cigsale', x_cols=[], treat_col='treat')
-# model = Econformal(data=data, time='year', id='id', y_col='Y', x_cols=[], treat_col='Treat')
+model = Econformal(data=data, time='year', id='state', y_col='cigsale', controls_col=[], treat_col='Treat')
+# model = Econformal(data=data, time='year', id='id', y_col='Y', controls_col=[], treat_col='Treat')
 nulls = np.linspace(-60, 20, 100)
 
 # 计量模型拟合
-result = model.conformal_inference(econ_model = 'SC', conformal_model='Full', nulls=nulls, coverage=0.9)
+result = model.conformal_inference(econ_model = 'sc', conformal_model='full', nulls=nulls, coverage=0.9)
 
 print(result)
 
@@ -48,11 +48,11 @@ fig.show()
 print(data.head())
 
 # 用户初始化模型
-# model = Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
+# model = Econformal(data=data, time='year', id='id', y_col='Y', controls_col=['X1', 'X2', 'X3'], treat_col='Treat')
 nulls = np.linspace(-10, 10, 100)
 
 # 计量模型拟合
-result = model.conformal_inference(econ_model = 'SC', conformal_model='Full', nulls=nulls, coverage=0.90)
+result = model.conformal_inference(econ_model = 'sc', conformal_model='full', nulls=nulls, coverage=0.90)
 
 print(result)
 
@@ -74,11 +74,11 @@ data = generate_test_panel_data(
 print(data.head())
 
 # 用户初始化模型
-model = Econformal(data=data, time='year', id='id', y_col='Y', x_cols=['X1', 'X2', 'X3'], treat_col='Treat')
+model = Econformal(data=data, time='year', id='id', y_col='Y', controls_col=['X1', 'X2', 'X3'], treat_col='Treat')
 nulls = np.linspace(-10, 10, 100)
 
 # 计量模型拟合
-result = model.conformal_inference(econ_model = 'SDID', conformal_model='Full', nulls=nulls, coverage=0.90)
+result = model.conformal_inference(econ_model = 'SDID', conformal_model='full', nulls=nulls, coverage=0.90)
 print(result)
 
 # 用户查看结果
