@@ -96,7 +96,6 @@ class Conformal(ConformalBase):
 
         nulls_matrix[mask] = np.nan
 
-        
         # 计算nulls_matrix每行的最小值和最大值（忽略NaN）
         min_values = np.nanmin(nulls_matrix, axis=1)
         max_values = np.nanmax(nulls_matrix, axis=1)

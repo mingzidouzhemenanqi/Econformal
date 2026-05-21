@@ -26,7 +26,20 @@ class Econometric():
         id: str 个体ID列名
         y_col: str 因变量列名
         treat_col: str 处理变量列名
+        coverage: float 覆盖率
+
         controls_col: list 协变量列名列表
+        event_window: tuple 事件窗口，默认None
+        """
+        """
+        返回数据格式：dataframe
+                year
+                prediction   
+                effect
+                std_error    
+                p-value      
+                90%_conf_lower
+                90%_conf_upper
         """
         ci_lower_col = f"{int(coverage * 100)}%_conf_lower"
         ci_upper_col = f"{int(coverage * 100)}%_conf_upper"

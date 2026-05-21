@@ -48,7 +48,9 @@ class Econformal:
         self.data = data
 
 
-    def conformal_inference(self, econ_model: str, conformal_model: str, nulls:list, coverage: float = 0.9, **kwargs):
+    def conformal_inference(self, econ_model: str, conformal_model: str, 
+                            coverage: float = 0.9, 
+                            nulls:list=None, splite_rate=0.7, **kwargs):
 
         """
         与用户交互的主要方法
@@ -58,14 +60,14 @@ class Econformal:
 
         返回结果格式：dataframe
                 year
-                prediction   如果是DID这种直接出effcet的方法，为0
+                prediction   
                 effect
-                std_error    暂时为0
-                p-value      暂时为0
-                置信区间下界  暂时为0
-                置信区间上界  暂时为0
-                共形推断区间下界
-                共形推断区间上界
+                std_error    
+                p-value      
+                90%_conf_lower
+                90%_conf_upper
+                90%_conformal_lower
+                90%_conformal_upper
         """
         ############ 检查 ##########
         # 用户输入的计量模型是否可以使用

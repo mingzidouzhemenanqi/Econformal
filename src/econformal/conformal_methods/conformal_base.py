@@ -23,7 +23,7 @@ class ConformalBase(ABC):
 
     def __init__(self, econ_model, data: pd.DataFrame, time: str, id: str,
                 y_col: str, treat_col: str, coverage: float, 
-                controls_col: list=[], **kwargs):
+                controls_col: list=[], nulls: list=[], **kwargs):
         self.econ_model = econ_model   # 计量模型
         self.coverage = coverage     # 置信区间覆盖率
         self.data = data            # 输入的数据集
@@ -54,6 +54,12 @@ class ConformalBase(ABC):
         pass
 
     @abstractmethod
+    def preprocess_data(self, **kwargs):
+        """准备 fit() 所需的数据。"""
+
+        pass
+
+    @abstractmethod
     def fit(self, **kwargs):
         """计算共形推断的核心统计量。
 
@@ -70,52 +76,9 @@ class ConformalBase(ABC):
         """
         pass
 
-    def preprocess_data(self, **kwargs):
-        """准备 fit() 所需的数据。返回一个字典，作为 fit() 的关键字参数。
-
-        默认实现提取处理后时间列表。子类可覆盖以返回额外数据
-        （如 Split 的训练/校准集切分、Jackknife+ 的 LOO 索引等）。
-        """
-        time_list = self.data.loc[
-            self.data[self.time] >= self.treat_time, self.time
-        ].unique()
-
-        return {"time_list": time_list}
-
-
-
-    def result_to_dataframe(self, interval, **kwargs):
+    @abstractmethod
+    def result_to_dataframe(self, **kwargs):
         """将 predict() 的输出转为标准 DataFrame 格式。
 
-        默认处理两种常见格式：
-        1. np.ndarray shape=(n_times, 2) — [下界, 上界]
-        2. 已是 DataFrame — 直接返回
-
-        子类可覆盖以处理特殊格式。
         """
-        if isinstance(interval, pd.DataFrame):
-            return interval
-
-        time_list = self.data.loc[
-            self.data[self.time] >= self.treat_time, self.time
-        ].unique()
-
-        return pd.DataFrame(
-            interval,
-            index=time_list,
-            columns=[self.ci_lower_col, self.ci_upper_col],
-        )
-
-    def _get_residuals(self, data, treat_time, **kwargs):
-        """使用计量模型拟合数据并提取残差（处理效应）。
-
-        Shared helper for Split/Jackknife+/CV+ 等基于残差的算法。
-        Full Conformal 不使用此方法（它需要 p 值而非残差）。
-        """
-        fit_result = self.econ_model.fit_econmodel(
-            data, self.time, self.id, self.y_col, self.treat_col, self.coverage
-        )
-        residuals = fit_result.loc[
-            fit_result.index >= treat_time, 'effect'
-        ].to_numpy()
-        return residuals
+        pass 
