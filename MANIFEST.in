@@ -4,13 +4,14 @@
 include README.md
 
 # 包含 LICENSE 文件（如果有）
-# include LICENSE
+include LICENSE
 
 # 排除不需要上传的文件
 exclude .python-version
 exclude uv.lock
 exclude example.py
 exclude param search.py
+exclude version.md
 
 # 排除 .git 相关文件和文件夹
 recursive-exclude .git *
@@ -19,6 +20,11 @@ recursive-exclude .github *
 # 排除 IDE 配置文件
 recursive-exclude .vscode *
 recursive-exclude .idea *
+
+# 排除 AI 助手和临时文件夹
+prune .claude
+prune design
+prune ignore
 
 # 排除测试文件（如果有 tests 目录）
 recursive-exclude tests *
