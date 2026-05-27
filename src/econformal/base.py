@@ -50,7 +50,7 @@ class Econformal:
 
     def conformal_inference(self, econ_model: str, conformal_model: str, 
                             coverage: float = 0.9, 
-                            nulls:list=None, splite_rate=0.7, **kwargs):
+                            nulls:list=None, split_rate=0.7, **kwargs):
 
         """
         与用户交互的主要方法
@@ -88,7 +88,7 @@ class Econformal:
         self.econ_results = self.econ_fit(econ_model=econ_model, coverage = self.coverage)    # 该方法最后生成类变量self.econ_results
 
         ########### 执行共形推断进行区间预测 ##########
-        self.conformal_interval = self.conformal_inference_fit(econ_model=econ_model, conformal_model=conformal_model, nulls=nulls)    # 该方法最后生成类变量self.conformal_interval
+        self.conformal_interval = self.conformal_inference_fit(econ_model=econ_model, conformal_model=conformal_model, nulls=nulls, split_rate=split_rate)    # 该方法最后生成类变量self.conformal_interval
 
         ########### 将共形推断预测区间与econ_results合并 ##########
         self.results = self._merge_results()
@@ -138,7 +138,7 @@ class Econformal:
 
         return econ_results
         
-    def conformal_inference_fit(self, conformal_model: str, nulls:list=None, **kwargs):
+    def conformal_inference_fit(self, conformal_model: str, nulls:list=None, split_rate=0.7, **kwargs):
         """
         执行共形推断计算置信区间
         0. 获取误差率，并检查是否已经拟合模型
@@ -156,14 +156,16 @@ class Econformal:
         # 模型注册
         ConformalClass = get_conformal_model(conformal_model)
         # 共形推断模型初始化
-        self.conformal_model = ConformalClass(econ_model=self.econ_model, 
+        self.conformal_model = ConformalClass(econ_model=self.econ_model,
                                             data=self.data,
                                             time=self.time,
                                             id=self.id,
                                             y_col=self.y_col,
                                             nulls=nulls,
                                             treat_col=self.treat_col,
-                                            coverage=self.coverage, 
+                                            coverage=self.coverage,
+                                            controls_col=self.controls_col,
+                                            split_rate=split_rate,
                                             )
         # 共形推断计算
         conformal_interval = self.conformal_model.compute_conformal_interval()
