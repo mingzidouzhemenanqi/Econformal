@@ -1,3 +1,5 @@
+import sys
+
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -12,8 +14,13 @@ class Conformal(ConformalBase):
                 y_col: str, treat_col: str, coverage: float, 
                 nulls: list,
                 controls_col: list=[], **kwargs):
+        if nulls is None or len(nulls) == 0:
+            raise ValueError(
+                "Full Conformal 方法需要用户提供 nulls 参数（原假设列表）。"
+                "例如: nulls=np.linspace(-10, 10, 100)"
+            )
         self.nulls = nulls
-        
+
         # 调用父类 __init__，复用所有公共初始化逻辑
         super().__init__(
             econ_model=econ_model, data=data,time=time,id=id,
@@ -40,6 +47,18 @@ class Conformal(ConformalBase):
         '1. 共形推断主逻辑，计算p_value_matrix'
         self.p_value_matrix = self.fit(time_list, p_value_matrix)
 
+        # 检查 p_value_matrix 是否所有原假设均被拒绝（nulls 范围太窄）
+        all_rejected = np.all(self.p_value_matrix < (1 - self.coverage), axis=1)
+        if all_rejected.any():
+            affected = time_list[all_rejected]
+            print(
+                f"\n[WARNING] 在时间点 {list(affected)}，所有原假设均被拒绝（alpha={1-self.coverage:.2f}）。"
+                f"当前 nulls 范围 [{self.nulls[0]:.4f}, {self.nulls[-1]:.4f}] 可能太窄，"
+                f"建议扩大 nulls 范围（如 np.linspace(-50, 50, 100)）以确保能覆盖置信区间边界。\n",
+                file=sys.stderr,
+                flush=True
+            )
+
         '2. 用p_value_matrix从nulls中找出上下界，组成置信区间'
         confidence_interval = self.predict()
 
@@ -55,28 +74,29 @@ class Conformal(ConformalBase):
         """
 
         '第一层循环：时间'
-        #for i, treat_time_conformal in tqdm(enumerate(time_list), desc='p_value_matrix计算: '):
         for i, treat_time_conformal in enumerate(tqdm(time_list, desc='p_value_matrix计算: ')):
             
-            # 提取self.data中，self.time列的小于self.treat_time的行,且self.time等于treat_time_conformal的行，作为准增强数据（y_new在nulls的循环中修改即可）
+            # 提取self.data中，self.time列的小于self.treat_time的行,且self.time等于treat_time_conformal的行，作为准增强数据
             conformal_data_pro_0 = self.data[(self.data[self.time] < self.treat_time) | (self.data[self.time] == treat_time_conformal)]
-            
+
+            # 提前计算目标行的布尔 mask（对所有 null 都相同，避免内层循环重复扫描）
+            target_mask = conformal_data_pro_0[self.id].isin(self.target_id_list) & (conformal_data_pro_0[self.time] == treat_time_conformal)
+
             '第二层循环，遍历nulls对应行的每一个null'
             # 提前生成定长数组，提高运行速度
             p_value_list = np.zeros(len(self.nulls))
             for j, null in enumerate(self.nulls):
                 # 采用copy的方式，让conformal_data_pro每次循环重置，不然会一直累加null
                 conformal_data_pro = conformal_data_pro_0.copy()
-                
-                # 将conformal_data_pro中位于self.y_col列，同时self.id在列表self.target_id_list中且self.time等于treat_time_conformal处的值，减去null。得到增强数据集 
-                conformal_data_pro.loc[conformal_data_pro[self.id].isin(self.target_id_list) & (conformal_data_pro[self.time] == treat_time_conformal), self.y_col] -= null
+
+                # 将增强数据集中目标行的 y 值减去 null
+                conformal_data_pro.loc[target_mask, self.y_col] -= null
                 
                 # 使用增强数据训练模型            
-                fit_econmodel_data = self.econ_model.fit_econmodel(data=conformal_data_pro, time=self.time, id=self.id, y_col=self.y_col, treat_col=self.treat_col, coverage=self.coverage)
+                fit_econmodel_data = self.econ_model.fit_econmodel(data=conformal_data_pro, time=self.time, id=self.id, y_col=self.y_col, treat_col=self.treat_col, coverage=self.coverage, controls_col=self.controls_col)
 
                 # 获取处理效应
                 residuals = fit_econmodel_data[['effect']]
-                #print(residuals)
 
                 # 根据残差计算P值, 并存储在向量对应位置
                 p_value_list[j] = self._get_pvalue_each_permutations(residuals)
@@ -109,7 +129,7 @@ class Conformal(ConformalBase):
 
         # 获取第一层循环变量：时间
         # 获取self.data中self.time列所有大于等于self.treat_time的值，返回一个列表
-        time_list = self.data.loc[self.data[self.time] >= self.treat_time, self.time].unique()
+        time_list = np.array(sorted(self.data.loc[self.data[self.time] >= self.treat_time, self.time].unique()))
 
         # p值空矩阵，用于存储每个null的计算结果，提前生成矩阵提高运算速度。行数为处理后时期长度，列为nulls的长度       
         p_value_matrix = np.zeros((len(time_list), len(self.nulls)))
@@ -120,29 +140,10 @@ class Conformal(ConformalBase):
         """将结果转换为DataFrame"""
         return pd.DataFrame(
                         confidence_interval,
-                        index=time_list,  # 使用排序后的不重复时间作为索引
-                        columns=[
-                            f"{int((self.coverage)*100)}%_conformal_lower",
-                            f"{int((self.coverage)*100)}%_conformal_upper"
-                        ])
+                        index=time_list,
+                        columns=[self.ci_lower_col, self.ci_upper_col])
 
-    def _get_pvalue_each(self, resid_df):
-        # 将resid_df转成numpy数组
-        residuals = resid_df.to_numpy().flatten()
-        
-        # residuals中的值取绝对值
-        residuals = np.abs(residuals)
-        
-        # 计算每个残差小于最后一个残差的比例
-        p_values = np.mean(residuals <= residuals[-1])
-        
-        return p_values
     def _get_pvalue_each_permutations(self, resid_df):
-        # residual为一列的dataframe，转成numpy数组
-        #residuals = residuals.to_numpy().flatten()
-        # 残差小于最后一个残差的比例
-        #return np.mean(residuals <= residuals[-1])
-        # 给resid_df生成新列"post_intervention"，除了最后一个值为True，其他都是False
         resid_df['post_intervention'] = False  # 先将所有值设为False
         # 将'post_intervention'列最后一个元素设置为True
         resid_df.iloc[-1, resid_df.columns.get_loc('post_intervention')] = True
