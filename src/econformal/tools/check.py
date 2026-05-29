@@ -238,12 +238,92 @@ def strong_panel(data, id_col='id', time_col='time'):
         print('The data set is a strongly balanced panel data')
         return True, None
 
+def validate_coverage(coverage):
+    """校验 coverage 在 (0, 1) 范围内。
+
+    Args:
+        coverage: float，用户传入的目标覆盖率。
+
+    Returns:
+        bool: 校验通过返回 True。
+
+    Raises:
+        ValueError: coverage 不在 (0, 1) 区间内。
+    """
+    if not 0 < coverage < 1:
+        raise ValueError(
+            f"coverage 必须在 (0, 1) 范围内，当前值为 {coverage}。"
+            f"例如: coverage=0.9 表示 90% 置信区间。"
+        )
+    return True
+
+
 def data_col_name_check_T_(data):
     #检查data每一列的列名是否包含'T_'
     #若包含，抛出错误，提示：列名不能包含'T_'，否则影响DID等模型的估计
     for col in data.columns:
         if 'T_' in col:
             raise ValueError(f"列名不能包含'T_'，否则影响DID等模型的估计。请检查列名：{col}")
+    return True
+
+
+def validate_treat_col(data, treat_col):
+    """校验 treat_col 是否为 0/1 二值变量且两种值均存在。
+
+    Args:
+        data: pd.DataFrame，输入面板数据。
+        treat_col: str，处理指示列名。
+
+    Raises:
+        ValueError: 列不存在、值不是 {0, 1}、或缺少 0/1 其中之一。
+    """
+    if treat_col not in data.columns:
+        raise ValueError(f"处理列 '{treat_col}' 不在数据中，当前列名: {list(data.columns)}")
+
+    unique_vals = set(data[treat_col].unique())
+    if unique_vals != {0, 1}:
+        raise ValueError(
+            f"处理列 '{treat_col}' 必须为 0/1 二值变量。"
+            f"当前唯一值: {sorted(unique_vals)}，期望: [0, 1]"
+        )
+    return True
+
+
+def validate_data_format(data, time_col, id_col, treat_col):
+    """聚合数据格式校验：时间可排序、强面板、列名不含T_、treat列为0/1二值。"""
+    validate_time_sortable(data, time_col)
+    strong_panel(data, id_col=id_col, time_col=time_col)
+    data_col_name_check_T_(data)
+    validate_treat_col(data, treat_col)
+
+
+def preprocess_data(data, id_col, time_col):
+    """数据预处理：生成样本识别码 id_code，按时间、个体排序。"""
+    data = get_id_code(data, id_col)
+    data = data.sort_values(by=[time_col, id_col]).reset_index(drop=True)
+    return data
+
+
+def validate_time_sortable(data, time_col):
+    """校验时间列是否可排序。
+
+    Args:
+        data: pd.DataFrame，输入面板数据。
+        time_col: str，时间列名。
+
+    Raises:
+        ValueError: 列不存在，或列值类型不可排序。
+    """
+    if time_col not in data.columns:
+        raise ValueError(f"时间列 '{time_col}' 不在数据中，当前列名: {list(data.columns)}")
+
+    try:
+        sorted(data[time_col].unique())
+    except TypeError as e:
+        raise ValueError(
+            f"时间列 '{time_col}' 的值类型不可排序（{e}）。"
+            f"请确保时间列为 int、float、datetime 或可比较的字符串类型。"
+        )
     return True
 
 
