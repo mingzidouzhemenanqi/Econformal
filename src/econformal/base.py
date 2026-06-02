@@ -128,6 +128,7 @@ class Econformal:
                                             controls_col=self.controls_col,
                                             nulls=nulls,  # 原假设列表，仅full使用
                                             split_rate=split_rate,
+                                            econ_results=self.econ_results,
                                             )
         conformal_interval = self.conformal_model.compute_conformal_interval()
 

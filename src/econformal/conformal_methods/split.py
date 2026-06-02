@@ -484,8 +484,8 @@ class Conformal(ConformalBase):
     def _validate_econ_results(self, results, caller=''):
         """校验计量模型返回的 DataFrame 包含必需的列。
 
-        对 fit_econmodel() 返回的 DataFrame 做基本格式检查，
-        确保包含 time 列和 effect 列，以便后续的布尔过滤和值提取。
+        委托给基类 ConformalBase._validate_econ_results，保留 caller 参数
+        以兼容现有调用方式。
 
         Parameters
         ----------
@@ -501,20 +501,4 @@ class Conformal(ConformalBase):
         ValueError
             若 results 缺少必需的 time 列或 effect 列。
         """
-        if not isinstance(results, pd.DataFrame):
-            raise TypeError(
-                f"[{caller}] 计量模型 fit_econmodel() 必须返回 pd.DataFrame，"
-                f"实际返回类型: {type(results).__name__}"
-            )
-
-        if self.time not in results.columns:
-            raise ValueError(
-                f"[{caller}] 计量模型返回的 DataFrame 中缺少时间列 '{self.time}'。"
-                f"当前列名: {list(results.columns)}"
-            )
-
-        if 'effect' not in results.columns:
-            raise ValueError(
-                f"[{caller}] 计量模型返回的 DataFrame 中缺少 'effect' 列。"
-                f"当前列名: {list(results.columns)}"
-            )
+        super()._validate_econ_results(results, context=caller)

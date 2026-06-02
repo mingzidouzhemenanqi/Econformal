@@ -81,4 +81,45 @@ class ConformalBase(ABC):
         """将 predict() 的输出转为标准 DataFrame 格式。
 
         """
-        pass 
+        pass
+
+    def _validate_econ_results(self, results, context=''):
+        """校验计量模型返回的 DataFrame 包含必需的列。
+
+        对 fit_econmodel() 返回的 DataFrame 做基本格式检查，
+        确保包含 time 列和 effect 列，以便后续的布尔过滤和值提取。
+        子类可直接调用，无需重复实现。
+
+        Parameters
+        ----------
+        results : pd.DataFrame
+            计量模型 fit_econmodel() 的返回值。
+        context : str
+            调用方标识（如 'fit', 'predict', 'LOO(t_j=2010)'），用于错误消息定位。
+
+        Raises
+        ------
+        TypeError
+            若 results 不是 pd.DataFrame。
+        ValueError
+            若 results 缺少必需的 time 列或 effect 列。
+        """
+        ctx = context if context else 'unknown'
+
+        if not isinstance(results, pd.DataFrame):
+            raise TypeError(
+                f"[{ctx}] 计量模型 fit_econmodel() 必须返回 pd.DataFrame，"
+                f"实际返回类型: {type(results).__name__}"
+            )
+
+        if self.time not in results.columns:
+            raise ValueError(
+                f"[{ctx}] 计量模型返回的 DataFrame 中缺少时间列 '{self.time}'。"
+                f"当前列名: {list(results.columns)}"
+            )
+
+        if 'effect' not in results.columns:
+            raise ValueError(
+                f"[{ctx}] 计量模型返回的 DataFrame 中缺少 'effect' 列。"
+                f"当前列名: {list(results.columns)}"
+            )
