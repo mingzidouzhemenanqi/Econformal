@@ -1,3 +1,5 @@
+import warnings
+
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.utils.validation import check_X_y, check_array, check_is_fitted
 import cvxpy as cp
@@ -48,6 +50,11 @@ class Econometric(BaseEstimator):
         '''
 
         # 0. 去除控制变量，数据集 data 仅保留 time,id,y_col 列，去除协变量
+        if controls_col and len(controls_col) > 0:
+            warnings.warn(
+                "SC (Synthetic Control) 当前不支持控制变量 (controls_col)。"
+                "传入的 controls_col 将被静默忽略。"
+            )
         self.treat_time, self.target_id = check.extract_treatment_sc(data=data, id=id, time=time, treat_col=treat_col)
         
         # 1. 识别出处理个体 target_id 和处理时间 treat_time，并检查两者是否唯一

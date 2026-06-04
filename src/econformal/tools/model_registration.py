@@ -2,19 +2,29 @@ import os
 import importlib
 from typing import Type
 
+# 用户友好的别名映射：将包含特殊字符的名称映射到实际文件名
+_CONFORMAL_ALIASES = {
+    'jk+': 'jk_plus',
+}
+
+
 def get_conformal_model(model_name: str) -> Type:
     """
     根据模型名称自动注册并返回对应的Conformal类
-    
+
     Args:
-        model_name (str): 模型名称，对应conformal_methods目录下的Python文件名（不含.py后缀）
-        
+        model_name (str): 模型名称，对应conformal_methods目录下的Python文件名（不含.py后缀），
+                          支持别名: 'jk+' → 'jk_plus'
+
     Returns:
         Type: 对应的Conformal类
-        
+
     Raises:
         ValueError: 当指定的模型文件不存在时抛出异常
     """
+    # 别名映射：允许用户使用含特殊字符的友好名称
+    model_name = _CONFORMAL_ALIASES.get(model_name, model_name)
+
     # 获取conformal_methods目录路径,conformal_methods目录在上一级目录中
     # 获取当前文件的父目录
 
