@@ -5,6 +5,7 @@ from typing import Type
 # 用户友好的别名映射：将包含特殊字符的名称映射到实际文件名
 _CONFORMAL_ALIASES = {
     'jk+': 'jk_plus',
+    'cv+': 'cv_plus',
 }
 
 

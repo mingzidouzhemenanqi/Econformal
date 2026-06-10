@@ -41,7 +41,7 @@ class Econformal:
 
     def conformal_inference(self, econ_model: str, conformal_model: str,
                             coverage: float = 0.9,
-                            nulls: list = None, split_rate=0.7):
+                            nulls: list = None, split_rate=0.7, **kwargs):
 
         """
         与用户交互的主要方法
@@ -78,7 +78,8 @@ class Econformal:
         ########### 执行共形推断进行区间预测 ##########
         self.conformal_interval = self._conformal_inference_fit(ConformalCls,
                                                                 nulls=nulls,
-                                                                split_rate=split_rate)
+                                                                split_rate=split_rate,
+                                                                **kwargs)
 
         ########### 将共形推断预测区间与econ_results合并 ##########
         self.results = self._merge_results()
@@ -114,7 +115,7 @@ class Econformal:
 
         return econ_results
         
-    def _conformal_inference_fit(self, conformal_model_cls, nulls=None, split_rate=None):
+    def _conformal_inference_fit(self, conformal_model_cls, nulls=None, split_rate=None, **kwargs):
         """执行共形推断计算置信区间，结果存于 self.conformal_interval。"""
 
         # nulls参数：暂时没想好nulls如何自动生成，先将nulls定为必填参数
@@ -129,6 +130,7 @@ class Econformal:
                                             nulls=nulls,  # 原假设列表，仅full使用
                                             split_rate=split_rate,
                                             econ_results=self.econ_results,
+                                            **kwargs
                                             )
         conformal_interval = self.conformal_model.compute_conformal_interval()
 
