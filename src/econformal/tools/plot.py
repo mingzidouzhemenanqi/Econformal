@@ -98,15 +98,18 @@ def ci_interval_compare(self_data):
     plt.plot(plot_data.index, plot_data["effect"], label='Effect', color="C1")
 
     # 绘制置信区间线段（使用误差棒）
+    cov_pct = int(self_data.coverage * 100)
+    ci_lower_col = f"{cov_pct}%_conf_lower"
+    ci_upper_col = f"{cov_pct}%_conf_upper"
     time_points = plot_data.index.values
     for t in time_points:
         row = plot_data.loc[t]
-        plt.plot([t, t], [row['置信区间下界'], row['置信区间上界']], 
+        plt.plot([t, t], [row[ci_lower_col], row[ci_upper_col]],
                 color='gray', linewidth=1.5, alpha=0.8)
         # 在置信区间两端添加小横线
-        plt.plot([t-0.1, t+0.1], [row['置信区间下界'], row['置信区间下界']], 
+        plt.plot([t-0.1, t+0.1], [row[ci_lower_col], row[ci_lower_col]],
                 color='gray', linewidth=1.5, alpha=0.8)
-        plt.plot([t-0.1, t+0.1], [row['置信区间上界'], row['置信区间上界']], 
+        plt.plot([t-0.1, t+0.1], [row[ci_upper_col], row[ci_upper_col]],
                 color='gray', linewidth=1.5, alpha=0.8)
     # 绘制横轴
     plt.hlines(y=0, xmin=start_time, xmax=end_time, lw=2, color="Black")

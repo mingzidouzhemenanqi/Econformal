@@ -31,66 +31,114 @@ class Econometric(BaseEstimator):
 
         """
         返回结果：dataframe
-            
-            year
-            prediction   如果是 DID 这种直接出 effcet 的方法，为 0
+            {time}
             effect
-            std_error    暂时为 0
-            p-value      暂时为 0
-            置信区间下界  暂时为 0
-            置信区间上界  暂时为 0
+            std_error    (处理前残差的标准差)
+            p-value      (占位，暂为 0)
+            {cov}%_conf_lower
+            {cov}%_conf_upper
         """
 
         ############# 数据预处理 ##############
         '''
         数据预处理：
             0. 识别出处理个体 target_id 和处理时间 treat_time，并检查两者是否唯一（使用 check 中的函数）
-            1. 去除控制变量，合成控制法暂时无法处理带有控制变量情况
+            1. 提取控制变量数据（如有），用于后续增强特征矩阵
             2. 将长数据转换为宽数据，行为时间顺序，列为个体顺序
         '''
 
-        # 0. 去除控制变量，数据集 data 仅保留 time,id,y_col 列，去除协变量
-        if controls_col and len(controls_col) > 0:
-            warnings.warn(
-                "SC (Synthetic Control) 当前不支持控制变量 (controls_col)。"
-                "传入的 controls_col 将被静默忽略。"
-            )
+        # 0. 识别处理个体和处理时间
         self.treat_time, self.target_id = check.extract_treatment_sc(data=data, id=id, time=time, treat_col=treat_col)
-        
-        # 1. 识别出处理个体 target_id 和处理时间 treat_time，并检查两者是否唯一
+
+        # 1. 提取控制变量数据（在 pivot 之前），用于增强特征矩阵
+        controls_data = None
+        if controls_col and len(controls_col) > 0:
+            controls_data = data[[time, id] + list(controls_col)].copy()
+
+        # 2. 将长数据转换为宽数据，行为时间顺序，列为个体顺序
         data = data[[time, id, y_col]]
 
-
-        # 将长数据转换为宽数据，行为时间顺序，列为个体顺序
         data = data.pivot(index=time, columns=id, values=y_col)
+
+        ############# 控制变量增强 ##############
+        # 使用控制变量的处理前均值增强特征矩阵，使权重优化同时匹配结果变量和协变量
+        self._has_controls = False
+        if controls_data is not None and len(controls_col) > 0:
+            y_target = data[self.target_id]
+            X_controls = data.drop(columns=[self.target_id])
+            pre_mask = data.index < self.treat_time
+
+            aug_rows_y = []
+            aug_rows_X = []
+            for c in controls_col:
+                c_wide = controls_data.pivot(index=time, columns=id, values=c)
+                c_pre = c_wide[c_wide.index < self.treat_time]
+                c_means = c_pre.mean(axis=0)  # Series: index=unit_id
+                # 标准化以与结果变量行处于可比尺度
+                c_std = c_means.std(ddof=1)
+                if c_std < 1e-10:
+                    c_std = 1.0  # 常数列退化为等权贡献
+                c_means_std = (c_means - c_means.mean()) / c_std
+                aug_rows_y.append(c_means_std[self.target_id])
+                aug_rows_X.append(c_means_std[X_controls.columns].values)
+
+            # 边界检查：控制变量数不应过多主导优化
+            n_pre = len(y_target[pre_mask])
+            if len(aug_rows_y) > n_pre:
+                warnings.warn(
+                    f"控制变量数 ({len(aug_rows_y)}) 超过处理前时期数 ({n_pre})。"
+                    f"协变量匹配可能主导优化目标，建议减少控制变量数量。"
+                )
+
+            self._y_aug = np.concatenate([y_target[pre_mask].values, np.array(aug_rows_y)])
+            self._X_aug = np.vstack([X_controls[pre_mask].values] + aug_rows_X)
+            self._has_controls = True
 
         ############# 模型拟合 ##############
         """
         模型拟合
-            0. 模型拟合：仅使用处理前数据拟合权重
-            1. 计算预测值：使用处理前数据拟合的权重，计算所有个体的预测值
+            0. 模型拟合：仅使用处理前数据拟合权重（如有控制变量则使用增强矩阵）
+            1. 计算预测值：使用拟合的权重计算所有个体的预测值
             2. 计算处理效应：预测值与实际值之差
             3. 计算 result_df 各列数据
         """
         # SC 方法必须仅使用处理前数据拟合权重（这是合成控制法的基本原理）
-        # 对full模式进行兼容：如果处理后期数只有1期数据，保留所有数据。如果处理后有多个期数据，则仅保留处理前数据
-        if len(data[data.index >= self.treat_time]) == 1:   ## 对full模式进行兼容,如果处理后期数只有1期数据，使用全样本训练
-            self.fit(data.drop(columns=[self.target_id]).values, data[self.target_id].values)          
+        # Full Conformal 兼容：当仅 1 个处理后时期时，该时期（已被 null 偏移）需参与
+        # 权重学习。这遵循 CWZ (2021) 的方法论：模型应在原假设下重新估计。
+        if len(data[data.index >= self.treat_time]) == 1:
+            if self._has_controls:
+                post_mask = data.index >= self.treat_time
+                y_post = data[self.target_id][post_mask].values
+                X_post = data.drop(columns=[self.target_id])[post_mask].values
+                self.fit(np.vstack([self._X_aug, X_post]),
+                         np.concatenate([self._y_aug, y_post]))
+            else:
+                self.fit(data.drop(columns=[self.target_id]).values, data[self.target_id].values)
         else:
-            pre_treat_data = data[data.index < self.treat_time]
-            self.fit(pre_treat_data.drop(columns=[self.target_id]).values, pre_treat_data[self.target_id].values)
-        
+            if self._has_controls:
+                self.fit(self._X_aug, self._y_aug)
+            else:
+                pre_treat_data = data[data.index < self.treat_time]
+                self.fit(pre_treat_data.drop(columns=[self.target_id]).values, pre_treat_data[self.target_id].values)
+
+        # 当使用控制变量时，fit() 存储的 pre_treat_residuals_ 包含混合尺度的残差
+        # （结果变量行 + 标准化控制变量行 + 可能的处理后行），切除控制变量行，
+        # 仅保留结果变量部分以确保 std_error 和传统 CI 基于正确的残差计算
+        if self._has_controls:
+            n_outcome_rows = len(data[data.index < self.treat_time])
+            ctrl_slice = slice(n_outcome_rows, n_outcome_rows + len(controls_col))
+            self.pre_treat_residuals_ = np.delete(self.pre_treat_residuals_, ctrl_slice)
+
         # 1. 计算 result_df 各列数据
         
         # 获取拟合结果，组成 dataframe
         """
-            year         时间
-            prediction   SC 的预测值
-            effect       SC 预测值与实际值之差
-            std_error    暂时为 0
-            p-value      暂时为 0
-            置信区间下界  暂时为 0
-            置信区间上界  暂时为 0
+            {time}         时间
+            effect         SC 预测值与实际值之差
+            std_error      处理前残差的标准差
+            p-value        占位，暂为 0
+            {cov}%_conf_lower  传统 CI 下界
+            {cov}%_conf_upper  传统 CI 上界
         """
         data['predictions'] = self.predict(data.drop(columns=[self.target_id]).values)
 
@@ -101,15 +149,17 @@ class Econometric(BaseEstimator):
         data['p-value'] = self.get_p_value()
 
         ci_lower, ci_upper = self.get_confidence_interval(coverage)
-        data['置信区间下界'] = ci_lower
-        data['置信区间上界'] = ci_upper
+        ci_lower_col = f"{int(coverage * 100)}%_conf_lower"
+        ci_upper_col = f"{int(coverage * 100)}%_conf_upper"
+        data[ci_lower_col] = ci_lower
+        data[ci_upper_col] = ci_upper
 
         # 2. 数据表处理
         #由于 data 的 index 存在多级索引问题，直接 data.reset_index() 无法去除列名，故直接提取 data 所需数据，组成新的 dataframe
         #将 data 的 index 变成一列，列名为 time
         data[time] = data.index
         # 保留所需列
-        target_columns = [time, 'predictions', 'effect', 'std_error', 'p-value', '置信区间下界', '置信区间上界']
+        target_columns = [time, 'effect', 'std_error', 'p-value', ci_lower_col, ci_upper_col]
         data = data[target_columns]
         # 提取纯净数据
         clean_data = data.values
