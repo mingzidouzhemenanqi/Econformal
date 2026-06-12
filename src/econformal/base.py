@@ -73,7 +73,7 @@ class Econformal:
         self.ci_upper_col = f"{int(self.coverage * 100)}%_conformal_upper"
 
         ########### 执行计量经济学模型拟合 ##########
-        self.econ_results = self._econ_fit(EconModelCls)
+        self.econ_results = self._econ_fit(EconModelCls, **kwargs)
 
         ########### 执行共形推断进行区间预测 ##########
         self.conformal_interval = self._conformal_inference_fit(ConformalCls,
@@ -98,8 +98,13 @@ class Econformal:
         return fig
 
 
-    def _econ_fit(self, econ_model_cls):
-        """拟合计量经济学模型，结果存于 self.econ_results。"""
+    def _econ_fit(self, econ_model_cls, **kwargs):
+        """拟合计量经济学模型，结果存于 self.econ_results。
+
+        将 **kwargs 透传至 fit_econmodel()，使得用户可以通过
+        conformal_inference(zeta=..., zeta_time=...) 等方式
+        传递计量模型专属参数。
+        """
         self.econ_model = econ_model_cls()
 
         # 拟合模型并返回预测结果
@@ -111,6 +116,7 @@ class Econformal:
                             treat_col=self.treat_col,
                             controls_col=self.controls_col,
                             coverage=self.coverage,
+                            **kwargs,
                         )
 
         return econ_results

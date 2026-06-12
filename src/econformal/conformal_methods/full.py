@@ -109,7 +109,7 @@ class Conformal(ConformalBase):
     def predict(self):
         """为每个新样本计算预测区间"""
         # 生成nulls矩阵,（行为p_value_matrix行数，列为nulls长度，每行都是nulls，方便找区间）
-        nulls_matrix = np.tile(self.nulls, (self.p_value_matrix.shape[0], 1))
+        nulls_matrix = np.tile(self.nulls, (self.p_value_matrix.shape[0], 1)).astype(float)
 
         # 找到self.p_value_matrix中p值小于1-coverage的位置，并将对应nulls设为NaN
         mask = self.p_value_matrix < (1-self.coverage)

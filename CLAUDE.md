@@ -18,6 +18,7 @@ Econformal/
 │   ├── econometrics_methods/
 │   │   ├── did.py             # DID（事件研究法），基于 PanelOLS + 相对时间虚拟变量
 │   │   └── sc.py              # Synthetic Control，基于 cvxpy 凸优化求解权重
+│   │   └── sdid.py            # Synthetic DID (Arkhangelsky et al., 2021)，单元/时间双重加权
 │   └── tools/
 │       ├── check.py           # 数据校验：强面板检查、列名检查、处理组/时间提取
 │       ├── plot.py            # 可视化：效应曲线 + 共形置信区间
@@ -273,7 +274,7 @@ Econformal(data, time='year', id='id', y_col='Y', treat_col='Treat', controls_co
 ## 项目状态
 
 - 当前版本 0.1.0（Alpha），已发布 PyPI
-- 已实现：DID (事件研究法)、SC (合成控制)、Full/Split Conformal
-- SC 暂不支持控制变量
-- Split Conformal 已接入 `ConformalBase` 抽象基类
-- SDID 为预留接口，尚未独立实现
+- 已实现：DID (事件研究法)、SC (合成控制)、SDID (合成双重差分)、Full/Split/LOO/JK+/CV+ Conformal
+- SC 控制变量支持有限（增强矩阵法，需至少一个处理后时期）
+- SDID 支持控制变量（增强矩阵法，同 SC 模式），支持多处理单元
+- Split/LOO/JK+/CV+ Conformal 已接入 `ConformalBase` 抽象基类
