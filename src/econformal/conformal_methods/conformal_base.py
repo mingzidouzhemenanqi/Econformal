@@ -22,8 +22,12 @@ class ConformalBase(ABC):
 
 
     def __init__(self, econ_model, data: pd.DataFrame, time: str, id: str,
-                y_col: str, treat_col: str, coverage: float, 
-                controls_col: list=[], nulls: list=[], **kwargs):
+                y_col: str, treat_col: str, coverage: float,
+                controls_col: list=None, nulls: list=None, **kwargs):
+        if controls_col is None:
+            controls_col = []
+        if nulls is None:
+            nulls = []
         self.econ_model = econ_model   # 计量模型
         self.coverage = coverage     # 置信区间覆盖率
         self.data = data            # 输入的数据集
@@ -42,6 +46,11 @@ class ConformalBase(ABC):
             data=data, id=id, time=time, treat_col=treat_col)
         self.treat_time = check.get_first_treatment_year(
             data=data, id=id, time=time, treat_col=treat_col)
+
+        # 保存用户传入的计量模型专属 kwargs，供子类在内部重拟合时透传
+        # （Full/Split/LOO/JK+/CV+ 的内部 fit_econmodel() 调用需要这些参数
+        # 以确保内外拟合使用相同的模型规格）
+        self._econ_kwargs = kwargs
 
 
     @abstractmethod
@@ -82,6 +91,20 @@ class ConformalBase(ABC):
 
         """
         pass
+
+    @staticmethod
+    def _adaptive_tol(effects: np.ndarray) -> float:
+        """返回与数据尺度适配的"近似零"容差。
+
+        硬编码的 1e-12 对于 Y~1 的数据合适，但对于 Y~1e-15 的数据会丢弃
+        所有 nonconformity score。此方法计算 `max(|effect|, 1e-15) * 1e-8`，
+        确保容差随数据自动缩放，同时不低于 1e-15 作为底限。
+        """
+        abs_eff = np.abs(effects)
+        scale = float(np.max(abs_eff)) if len(abs_eff) > 0 else 1.0
+        if scale < 1e-15:
+            scale = 1.0
+        return max(scale * 1e-8, 1e-15)
 
     def _validate_econ_results(self, results, context=''):
         """校验计量模型返回的 DataFrame 包含必需的列。

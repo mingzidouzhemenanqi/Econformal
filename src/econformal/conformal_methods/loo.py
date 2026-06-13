@@ -293,11 +293,11 @@ class Conformal(ConformalBase):
         self.pre_times = np.array(pre_times)
 
         # 处理前时点过少时发出警告：LOO 残差分布将不稳定，区间可能极宽
-        if len(self.pre_times) < 4:
-            warnings.warn(
-                f"处理前时点仅有 {len(self.pre_times)} 个（< 4），"
-                f"LOO 残差分布将不稳定，置信区间可能过宽。"
-                f"建议使用 Split Conformal 或 Full Conformal 替代。"
+        if len(self.pre_times) < 2:
+            raise ValueError(
+                f"处理前时点仅有 {len(self.pre_times)} 个，LOO Conformal 至少需要 2 个"
+                f"（至少 1 个训练点 + 1 个被留出的校准点）。"
+                f"请使用 Full Conformal 或增加处理前时点数量。"
             )
 
         # 提取处理后时间列表 (predict 阶段需要)
@@ -364,7 +364,7 @@ class Conformal(ConformalBase):
             loo_mask = (is_pre & (self.data[self.time] != t_j)) | is_first_post
             loo_data = self.data[loo_mask]
 
-            # 在 LOO 数据上拟合计量模型
+            # 在 LOO 数据上拟合计量模型（透传用户 kwargs 确保内外拟合规格一致）
             results = self.econ_model.fit_econmodel(
                 data=loo_data,
                 time=self.time,
@@ -372,17 +372,19 @@ class Conformal(ConformalBase):
                 y_col=self.y_col,
                 treat_col=self.treat_col,
                 coverage=self.coverage,
-                controls_col=self.controls_col
+                controls_col=self.controls_col,
+                **self._econ_kwargs,
             )
 
             # 校验返回结果格式
             super()._validate_econ_results(results, context=f'LOO(t_j={t_j})')
 
             # 提取该 LOO 模型在剩余处理前时点上的 |effect|
-            # 排除 effect≈0 的时点（参考期/无信息量），使用容差避免浮点比较
+            # 排除 effect≈0 的时点（参考期/无信息量），使用自适应容差
+            tol = self._adaptive_tol(results['effect'].to_numpy())
             pre_mask = (
                 (results[self.time] < self.treat_time) &
-                (np.abs(results['effect']) > 1e-12)
+                (np.abs(results['effect']) > tol)
             )
             scores_from_loo = results.loc[pre_mask, 'effect'].abs().to_numpy()
 
@@ -453,7 +455,8 @@ class Conformal(ConformalBase):
                 y_col=self.y_col,
                 treat_col=self.treat_col,
                 coverage=self.coverage,
-                controls_col=self.controls_col
+                controls_col=self.controls_col,
+                **self._econ_kwargs,
             )
 
         # 校验返回结果格式
@@ -517,36 +520,3 @@ class Conformal(ConformalBase):
             columns=[self.ci_lower_col, self.ci_upper_col]
         )
 
-    # =========================================================================
-    # 辅助方法
-    # =========================================================================
-
-    def _validate_econ_results(self, results, t_j=None, caller=''):
-        """校验计量模型返回的 DataFrame 包含必需的列。
-
-        委托给基类 ConformalBase._validate_econ_results。
-
-        Parameters
-        ----------
-        results : pd.DataFrame
-            计量模型 fit_econmodel() 的返回值。
-        t_j : int or float, optional
-            当前 LOO 被剔除的时点，用于错误消息定位。
-        caller : str
-            调用方标识 ('fit' 或 'predict')，用于错误消息定位。
-
-        Raises
-        ------
-        TypeError
-            若 results 不是 pd.DataFrame。
-        ValueError
-            若 results 缺少必需的 time 列或 effect 列。
-        """
-        # 构造上下文标识，优先使用 t_j，其次使用 caller
-        if t_j is not None:
-            ctx = f'LOO(t_j={t_j})'
-        elif caller:
-            ctx = caller
-        else:
-            ctx = 'unknown'
-        super()._validate_econ_results(results, context=ctx)

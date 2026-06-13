@@ -59,6 +59,13 @@ class Econometric(BaseEstimator):
         data = data[[time, id, y_col]]
 
         data = data.pivot(index=time, columns=id, values=y_col)
+        # pivot 在有缺失 (id, time) 组合时静默产生 NaN，导致后续优化失败
+        if data.isna().any().any():
+            raise ValueError(
+                "数据透视后包含 NaN 值，可能存在不平衡面板。"
+                "SC 要求所有个体在所有时点均有观测值（强面板）。"
+                "请检查数据中是否每个 (id, time) 组合均有且仅有一条记录。"
+            )
 
         ############# 控制变量增强 ##############
         # 使用控制变量的处理前均值增强特征矩阵，使权重优化同时匹配结果变量和协变量
@@ -105,7 +112,8 @@ class Econometric(BaseEstimator):
         # SC 方法必须仅使用处理前数据拟合权重（这是合成控制法的基本原理）
         # Full Conformal 兼容：当仅 1 个处理后时期时，该时期（已被 null 偏移）需参与
         # 权重学习。这遵循 CWZ (2021) 的方法论：模型应在原假设下重新估计。
-        if len(data[data.index >= self.treat_time]) == 1:
+        self._full_conformal_mode = len(data[data.index >= self.treat_time]) == 1
+        if self._full_conformal_mode:
             if self._has_controls:
                 post_mask = data.index >= self.treat_time
                 y_post = data[self.target_id][post_mask].values
@@ -129,6 +137,12 @@ class Econometric(BaseEstimator):
             ctrl_slice = slice(n_outcome_rows, n_outcome_rows + len(controls_col))
             self.pre_treat_residuals_ = np.delete(self.pre_treat_residuals_, ctrl_slice)
 
+        # Full Conformal 模式下，fit() 包含了处理后数据（已被 null 偏移）。
+        # 切除最后一个残差（处理后行），使 std_error / CI 仅基于处理前残差，
+        # 避免处理效应（和 null 偏移）对标准误估计的污染。
+        if self._full_conformal_mode:
+            self.pre_treat_residuals_ = self.pre_treat_residuals_[:-1]
+
         # 1. 计算 result_df 各列数据
         
         # 获取拟合结果，组成 dataframe
@@ -148,27 +162,20 @@ class Econometric(BaseEstimator):
 
         data['p-value'] = self.get_p_value()
 
-        ci_lower, ci_upper = self.get_confidence_interval(coverage)
+        half_lo, half_hi = self.get_confidence_interval(coverage)
         ci_lower_col = f"{int(coverage * 100)}%_conf_lower"
         ci_upper_col = f"{int(coverage * 100)}%_conf_upper"
-        data[ci_lower_col] = ci_lower
-        data[ci_upper_col] = ci_upper
+        # CI centered on each period's effect: [effect + half_lo, effect + half_hi]
+        data[ci_lower_col] = data['effect'] + half_lo
+        data[ci_upper_col] = data['effect'] + half_hi
 
         # 2. 数据表处理
-        #由于 data 的 index 存在多级索引问题，直接 data.reset_index() 无法去除列名，故直接提取 data 所需数据，组成新的 dataframe
-        #将 data 的 index 变成一列，列名为 time
+        # 直接将 index（时间）作为列加入并构造干净的 DataFrame，
+        # 避免 .values 的 dtype 统一化导致时间类型丢失。
         data[time] = data.index
-        # 保留所需列
         target_columns = [time, 'effect', 'std_error', 'p-value', ci_lower_col, ci_upper_col]
-        data = data[target_columns]
-        # 提取纯净数据
-        clean_data = data.values
-        result_df = pd.DataFrame(
-            data=clean_data,
-            columns=target_columns  # 使用原始列名
-        )
-        # 将 time 列的数值转化为 int
-        result_df[time] = result_df[time].astype(int)
+        result_df = data[target_columns].reset_index(drop=True)
+        # 确保时间列保持原始 dtype，不强制转换
         # 将 time 列设置为 index
         # result_df.set_index(time, inplace=True)
 
@@ -199,7 +206,13 @@ class Econometric(BaseEstimator):
         # 检查求解状态
         if problem.status not in ['optimal', 'optimal_inaccurate']:
             raise RuntimeError(f"SC 权重优化求解失败，求解器状态：{problem.status}")
-        
+
+        if problem.status == 'optimal_inaccurate':
+            warnings.warn(
+                f"SC 权重优化返回 'optimal_inaccurate'，解可能数值不精确。"
+                f"建议检查数据缩放或考虑标准化变量。"
+            )
+
         # 将 X，y，w 的值赋给实例变量
         self.X_ = X
         self.y_ = y
@@ -225,18 +238,26 @@ class Econometric(BaseEstimator):
         return data[self.target_id] - data['predictions']
 
     def get_std_error(self):
-        if not hasattr(self, 'pre_treat_residuals_'):
-            return 0
+        check_is_fitted(self)
+        if len(self.pre_treat_residuals_) < 2:
+            return float('nan')
         return np.std(self.pre_treat_residuals_, ddof=1)
-    
-    def get_p_value(self):
 
-        return 0
+    def get_p_value(self):
+        check_is_fitted(self)
+        return float('nan')
 
     def get_confidence_interval(self, coverage=0.9):
-        if not hasattr(self, 'pre_treat_residuals_'):
-            return 0, 0
+        """返回基于正态近似的置信区间半宽 (z * std_err)。
+
+        注意：返回的是半宽而非完整区间，由调用方与 effect 组合为
+        [effect - half_width, effect + half_width]。
+        """
+        check_is_fitted(self)
         std_err = np.std(self.pre_treat_residuals_, ddof=1)
+        if np.isnan(std_err) or std_err < 1e-15:
+            return float('nan'), float('nan')
         from scipy import stats
         z = stats.norm.ppf((1 + coverage) / 2)
-        return -z * std_err, z * std_err
+        half_width = z * std_err
+        return -half_width, half_width

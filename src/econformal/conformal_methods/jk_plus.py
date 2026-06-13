@@ -184,7 +184,7 @@ class Conformal(ConformalBase):
 
         # ---- 兼容性警告：JK+ + DID ----
         econ_module = type(self.econ_model).__module__
-        if 'did' in econ_module:
+        if econ_module.split('.')[-1] == 'did':
             warnings.warn(
                 "JK+ (Jackknife+) 与 DID 组合：R_j 使用剩余处理前时点的 "
                 "mean(|effect|) 作为代理残差，而非标准 Jackknife+ 要求的 "
@@ -274,6 +274,12 @@ class Conformal(ConformalBase):
         self.pre_times = np.array(pre_times)
 
         # 处理前时点过少时发出警告：分位数估计将不稳定
+        if len(self.pre_times) < 2:
+            raise ValueError(
+                f"处理前时点仅有 {len(self.pre_times)} 个，Jackknife+ 至少需要 2 个"
+                f"（至少 1 个训练点 + 1 个被留出的校准点）。"
+                f"请使用 Full Conformal 或增加处理前时点数量。"
+            )
         if len(self.pre_times) < 4:
             warnings.warn(
                 f"处理前时点仅有 {len(self.pre_times)} 个（< 4），"
@@ -354,7 +360,7 @@ class Conformal(ConformalBase):
             loo_mask = (is_pre & (self.data[self.time] != t_j)) | is_post
             loo_data = self.data[loo_mask]
 
-            # 在 LOO 数据上拟合计量模型
+            # 在 LOO 数据上拟合计量模型（透传用户 kwargs 确保内外拟合规格一致）
             results = self.econ_model.fit_econmodel(
                 data=loo_data,
                 time=self.time,
@@ -362,7 +368,8 @@ class Conformal(ConformalBase):
                 y_col=self.y_col,
                 treat_col=self.treat_col,
                 coverage=self.coverage,
-                controls_col=self.controls_col
+                controls_col=self.controls_col,
+                **self._econ_kwargs,
             )
 
             # 校验返回结果格式
@@ -422,10 +429,11 @@ class Conformal(ConformalBase):
         float
             Nonconformity score R_j。
         """
-        # 提取剩余处理前时点的 |effect|（排除 effect≈0 的参考期）
+        # 提取剩余处理前时点的 |effect|（排除 effect≈0 的参考期），使用自适应容差
+        tol = self._adaptive_tol(results['effect'].to_numpy())
         pre_mask = (
             (results[self.time] < self.treat_time) &
-            (np.abs(results['effect']) > 1e-12)
+            (np.abs(results['effect']) > tol)
         )
         pre_effects = results.loc[pre_mask, 'effect'].abs().to_numpy()
 
@@ -441,7 +449,7 @@ class Conformal(ConformalBase):
             effect_at_tj = results.loc[
                 results[self.time] == t_j, 'effect'
             ].iloc[0]
-            if abs(effect_at_tj) > 1e-12:
+            if abs(effect_at_tj) > tol:
                 return float(abs(effect_at_tj))
             # effect≈0（如恰好是参考期）→ 回退到通用 fallback
 
@@ -544,7 +552,7 @@ class Conformal(ConformalBase):
             k_lower = int(np.ceil((n + 1) * alpha))
             k_upper = int(np.ceil((n + 1) * self.coverage))
 
-            lb = sorted_lower[max(k_lower - 1, 0)]
+            lb = sorted_lower[min(max(k_lower - 1, 0), n - 1)]
             ub = sorted_upper[min(k_upper - 1, n - 1)]
 
             all_lower.append(lb)

@@ -253,6 +253,12 @@ class Conformal(ConformalBase):
                 "处理前时期为空，无法进行 Split Conformal 推断。"
                 "请确保数据中包含处理前的时间点 (time < treat_time)。"
             )
+        if len(pre_times) < 2:
+            raise ValueError(
+                f"处理前时期仅有 {len(pre_times)} 个时点，Split Conformal 至少需要 2 个"
+                f"（1 个用于训练 + 1 个用于校准）。"
+                f"请使用 Full Conformal 或增加处理前时点数量。"
+            )
 
         # 按索引确定切分点，比例精确匹配 split_rate
         # 例: pre_times=[2000,2001,2002,2003,2004], split_rate=0.7
@@ -476,7 +482,8 @@ class Conformal(ConformalBase):
             y_col=self.y_col,
             treat_col=self.treat_col,
             coverage=self.coverage,
-            controls_col=self.controls_col
+            controls_col=self.controls_col,
+            **self._econ_kwargs,
         )
         self._validate_econ_results(results, caller=caller)
         return results

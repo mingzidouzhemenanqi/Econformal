@@ -52,7 +52,13 @@ def get_first_treatment_year(data, id, time, treat_col):
                         .reset_index(name='first_year'))
         
     # 返回所有首次处理时间中的最小值（即数据集中最早的处理年份）
-    return first_treatments['first_year'].min()
+    result = first_treatments['first_year'].min()
+    if pd.isna(result):
+        raise ValueError(
+            "无法确定首次处理时间：处理记录中包含 NaN 时间值。"
+            "请检查数据中处理组个体的时间列是否包含缺失值。"
+        )
+    return result
 
 
 def extract_treatment_sc(data, id, time, treat_col):
@@ -93,7 +99,13 @@ def extract_treatment_sc(data, id, time, treat_col):
     
     # 获取该个体的首次处理年份
     treatment_time = treated_obs[treated_obs[id] == treated_unit][time].min()
-    
+
+    if pd.isna(treatment_time):
+        raise ValueError(
+            f"无法确定处理个体 '{treated_unit}' 的首次处理时间："
+            f"该个体的处理记录中包含 NaN 时间值。"
+        )
+
     # 返回首次处理时间和处理个体
     return treatment_time, treated_unit
 
@@ -110,7 +122,7 @@ def get_id_code(data, id_col):
 
 
 
-def indenty_panel_data(data, year_col, id_col, y_col, controls_col, treat_col):
+def identify_panel_data(data, year_col, id_col, y_col, controls_col, treat_col):
     """
     面板数据识别函数
     该函数用于识别面板数据的处理组、处理时间，并新增一个id_code列，用于标识每个观测值。
@@ -217,17 +229,9 @@ def strong_panel(data, id_col='id', time_col='time'):
             missing_times = set(all_times) - set(entity_times)
             missing_info.append(f"个体 {entity_id} 缺少时间点: {sorted(missing_times)}")
     
-    # 4. 检查每个时间点的个体是否完整
-    time_grouped = data.groupby(time_col)[id_col]
-    for time_point, entities in time_grouped:
-        all_entities = set(data[id_col].unique())
-        present_entities = set(entities.unique())
-        missing_entities = all_entities - present_entities
-        
-        if missing_entities:
-            missing_info.append(f"时间点 {time_point} 缺少个体: {sorted(missing_entities)}")
-    
-    # 5. 结果判断
+    # 4. 结果判断
+    # 注：若 id→time 检查已确认每个个体具有所有时间点 (平衡面板)，
+    # 则 time→id 的方向必然也完整，跳过冗余检查
     if missing_info:
         warning_msg = "非平衡面板数据:\n" + "\n".join(missing_info[:10])  # 最多显示10条信息
         if len(missing_info) > 10:
@@ -259,33 +263,51 @@ def validate_coverage(coverage):
 
 
 def data_col_name_check_T_(data):
-    #检查data每一列的列名是否包含'T_'
-    #若包含，抛出错误，提示：列名不能包含'T_'，否则影响DID等模型的估计
+    # 检查 data 每一列的列名是否以 'T_' 开头
+    # 若包含，抛出错误，提示：列名不能以 'T_' 开头，否则影响 DID 等模型的估计
     for col in data.columns:
-        if 'T_' in col:
-            raise ValueError(f"列名不能包含'T_'，否则影响DID等模型的估计。请检查列名：{col}")
+        if col.startswith('T_'):
+            raise ValueError(f"列名不能以 'T_' 开头，否则影响 DID 等模型的估计。请检查列名：{col}")
     return True
 
 
 def validate_treat_col(data, treat_col):
-    """校验 treat_col 是否为 0/1 二值变量且两种值均存在。
+    """校验 treat_col 是否为 {0, 1} 二值整数变量且两种值均存在。
+
+    Python 中 bool 是 int 的子类（True==1, False==0），float 的 0.0/1.0 也等于 0/1，
+    因此仅靠 set(...) != {0, 1} 无法区分。本函数同时检查 dtype 确保为整数类型。
 
     Args:
         data: pd.DataFrame，输入面板数据。
         treat_col: str，处理指示列名。
 
     Raises:
-        ValueError: 列不存在、值不是 {0, 1}、或缺少 0/1 其中之一。
+        ValueError: 列不存在、值不是 {0, 1}、缺少 0/1 其中之一、或 dtype 非整数。
     """
     if treat_col not in data.columns:
         raise ValueError(f"处理列 '{treat_col}' 不在数据中，当前列名: {list(data.columns)}")
 
-    unique_vals = set(data[treat_col].unique())
+    col = data[treat_col]
+    unique_vals = set(col.unique())
+    # 值检查：必须恰好为 {0, 1}（int/bool/float 的 == 比较均适用）
     if unique_vals != {0, 1}:
         raise ValueError(
             f"处理列 '{treat_col}' 必须为 0/1 二值变量。"
             f"当前唯一值: {sorted(unique_vals)}，期望: [0, 1]"
         )
+    # dtype 检查：拒绝 bool（True/False）和 float（0.0/1.0），要求整数
+    if col.dtype == bool or col.dtype not in (int,):
+        import numpy as np
+        if col.dtype == bool:
+            raise ValueError(
+                f"处理列 '{treat_col}' 的 dtype 为 bool（True/False）。"
+                f"请转换为 0/1 整数类型（如 data['{treat_col}'] = data['{treat_col}'].astype(int)）。"
+            )
+        if not np.issubdtype(col.dtype, np.integer):
+            raise ValueError(
+                f"处理列 '{treat_col}' 的 dtype 为 {col.dtype}，"
+                f"必须为整数类型（0/1）。请使用 astype(int) 转换。"
+            )
     return True
 
 
@@ -295,6 +317,60 @@ def validate_data_format(data, time_col, id_col, treat_col):
     strong_panel(data, id_col=id_col, time_col=time_col)
     data_col_name_check_T_(data)
     validate_treat_col(data, treat_col)
+
+
+def validate_y_col_and_controls(data, y_col, controls_col):
+    """校验 y_col 和 controls_col 的列存在于 data 中，且不与其他关键列重叠。
+
+    Args:
+        data: pd.DataFrame
+        y_col: str，因变量列名
+        controls_col: list[str] 或 None，控制变量列名列表
+
+    Raises:
+        ValueError: 若列名不存在于 data 中，或 controls_col 与关键列重叠
+    """
+    if y_col not in data.columns:
+        raise ValueError(
+            f"因变量列 '{y_col}' 不在数据中，当前列名: {list(data.columns)}"
+        )
+    if controls_col:
+        missing_ctrl = [c for c in controls_col if c not in data.columns]
+        if missing_ctrl:
+            raise ValueError(
+                f"控制变量列 {missing_ctrl} 不在数据中，当前列名: {list(data.columns)}"
+            )
+        # G5: 检查 controls_col 不与 y_col/treat_col/time/id 重叠
+        _reserved = {y_col}
+        for c in controls_col:
+            if c in _reserved:
+                raise ValueError(
+                    f"控制变量列 '{c}' 与因变量列 '{y_col}' 重名。"
+                    f"控制变量不能包含因变量列。"
+                )
+
+
+def validate_no_nan(data, y_col, treat_col, time_col, id_col, controls_col):
+    """校验关键列中不存在 NaN 值。
+
+    Args:
+        data: pd.DataFrame
+        y_col, treat_col, time_col, id_col: str，关键列名
+        controls_col: list[str] 或 None，控制变量列名列表
+
+    Raises:
+        ValueError: 若任何关键列包含 NaN
+    """
+    _critical = [y_col, treat_col, time_col, id_col]
+    if controls_col:
+        _critical.extend(controls_col)
+    _critical = [c for c in _critical if c in data.columns]  # 仅检查存在的列
+    nan_cols = [c for c in _critical if data[c].isna().any()]
+    if nan_cols:
+        raise ValueError(
+            f"以下关键列包含 NaN 值: {nan_cols}。"
+            f"请先处理缺失值后再进行分析（如 dropna 或 fillna）。"
+        )
 
 
 def preprocess_data(data, id_col, time_col):

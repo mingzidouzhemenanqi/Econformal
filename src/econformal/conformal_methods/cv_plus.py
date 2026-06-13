@@ -250,7 +250,7 @@ class Conformal(ConformalBase):
 
         # ---- 兼容性警告：CV+ + DID ----
         econ_module = type(self.econ_model).__module__
-        if 'did' in econ_module:
+        if econ_module.split('.')[-1] == 'did':
             warnings.warn(
                 "CV+ (Cross-Validation Plus) 与 DID 组合：R_k 使用剩余处理前时点的 "
                 "mean(|effect|) 作为代理折残差，而非标准 CV+ 要求的 "
@@ -343,6 +343,12 @@ class Conformal(ConformalBase):
         self.pre_times = np.array(pre_times)
 
         # 处理前时点过少时发出警告
+        if len(self.pre_times) < 2:
+            raise ValueError(
+                f"处理前时点仅有 {len(self.pre_times)} 个，CV+ 至少需要 2 个"
+                f"（至少 1 个训练点 + 1 个校准点）。"
+                f"请使用 Full Conformal 或增加处理前时点数量。"
+            )
         if len(self.pre_times) < 4:
             warnings.warn(
                 f"处理前时点仅有 {len(self.pre_times)} 个（< 4），"
@@ -493,7 +499,7 @@ class Conformal(ConformalBase):
             fold_train_mask = ~fold_pre_mask
             fold_data = self.data[fold_train_mask]
 
-            # 在折外数据上拟合计量模型
+            # 在折外数据上拟合计量模型（透传用户 kwargs 确保内外拟合规格一致）
             results = self.econ_model.fit_econmodel(
                 data=fold_data,
                 time=self.time,
@@ -501,7 +507,8 @@ class Conformal(ConformalBase):
                 y_col=self.y_col,
                 treat_col=self.treat_col,
                 coverage=self.coverage,
-                controls_col=self.controls_col
+                controls_col=self.controls_col,
+                **self._econ_kwargs,
             )
 
             # 校验返回结果格式
@@ -588,10 +595,13 @@ class Conformal(ConformalBase):
         # 一次 isin 定位折内所有出现在结果中的时点行
         fold_mask = np.isin(time_values, fold_typed)
 
+        # 自适应容差：随 effect 尺度缩放
+        tol = self._adaptive_tol(results['effect'].to_numpy())
+
         if fold_mask.any():
             # 批量提取 |effect|，过滤掉 effect≈0 的参考期时点
             direct_effects = results.loc[fold_mask, 'effect'].abs()
-            direct_residuals = direct_effects[direct_effects > 1e-12].tolist()
+            direct_residuals = direct_effects[direct_effects > tol].tolist()
 
             if direct_residuals:
                 return float(np.mean(direct_residuals))
@@ -599,7 +609,7 @@ class Conformal(ConformalBase):
         # ---- 回退到 DID 模式：使用剩余处理前时点的平均 |effect| ----
         pre_mask = (
             (results[self.time] < self.treat_time) &
-            (np.abs(results['effect']) > 1e-12)
+            (np.abs(results['effect']) > tol)
         )
         pre_effects = results.loc[pre_mask, 'effect'].abs().to_numpy()
 

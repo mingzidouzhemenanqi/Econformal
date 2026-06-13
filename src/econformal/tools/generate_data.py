@@ -33,9 +33,8 @@ def generate_test_panel_data(n_ids=100,
         X1, X2, ..., Xn: 自变量 (n=x_num)
     """
     
-    if seed is not None:
-        np.random.seed(seed)
-    
+    rng = np.random.default_rng(seed)
+
     # 设置处理组个体数（默认为总个体的一半）
     if n_treated is None:
         n_treated = max(1, n_ids // 2)  # 确保至少有一个处理组
@@ -44,6 +43,11 @@ def generate_test_panel_data(n_ids=100,
     
     # 1. 基本参数计算
     total_years = pre_periods + post_periods
+    if total_years <= 1:
+        raise ValueError(
+            f"至少需要 2 个年份（含处理前和处理后），"
+            f"当前 pre_periods={pre_periods}, post_periods={post_periods}"
+        )
     years = np.arange(start_year, start_year + total_years)
     ids = np.arange(1, n_ids + 1)
     
@@ -55,7 +59,7 @@ def generate_test_panel_data(n_ids=100,
     
     # 3. 确定处理组和控制组
     # 随机选择处理组个体
-    treated_ids = np.random.choice(ids, size=n_treated, replace=False)
+    treated_ids = rng.choice(ids, size=n_treated, replace=False)
     df['Group'] = df['id'].apply(lambda x: 'Treatment' if x in treated_ids else 'Control')
     
     # 4. 生成处理变量
@@ -68,25 +72,22 @@ def generate_test_panel_data(n_ids=100,
     for id_ in ids:
         if id_ in treated_ids:
             # 处理组个体效应更强
-            indiv_map[id_] = np.random.normal(1, 1.5)
+            indiv_map[id_] = rng.normal(1, 1.5)
         else:
             # 控制组个体效应
-            indiv_map[id_] = np.random.normal(0, 1)
+            indiv_map[id_] = rng.normal(0, 1)
     
     # 应用个体固定效应
     for i in range(1, x_num + 1):
         # 复制基础个体效应并添加扰动
-        df[f'X{i}'] = df['id'].map(indiv_map) + np.random.normal(0, 0.5, size=len(df))
-        
-        # 添加时间趋势 - 按组应用不同趋势
-        time_trend = np.zeros(len(df))
-        for idx, row in df.iterrows():
-            year_idx = row['year'] - start_year
-            if row['Group'] == 'Control':
-                time_trend[idx] = 0.8 * (year_idx / (total_years - 1))
-            else:
-                time_trend[idx] = 1.2 * (year_idx / (total_years - 1))
-        
+        df[f'X{i}'] = df['id'].map(indiv_map) + rng.normal(0, 0.5, size=len(df))
+
+        # 添加时间趋势 - 按组应用不同趋势（向量化）
+        year_idx = (df['year'] - start_year) / (total_years - 1)
+        time_trend = np.where(
+            df['Group'] == 'Control', 0.8 * year_idx, 1.2 * year_idx
+        )
+
         df[f'X{i}'] += time_trend
     
     # 6. 生成因变量 Y
@@ -96,7 +97,7 @@ def generate_test_panel_data(n_ids=100,
     df['Y'] = base_effect + treatment_effect * df['Treat']
     
     # 添加自变量影响
-    x_coeffs = np.random.uniform(-1, 1, size=x_num)
+    x_coeffs = rng.uniform(-1, 1, size=x_num)
     for i, coef in enumerate(x_coeffs, 1):
         df['Y'] += coef * df[f'X{i}']
     
@@ -104,25 +105,21 @@ def generate_test_panel_data(n_ids=100,
     indiv_y_map = {}
     for id_ in ids:
         if id_ in treated_ids:
-            indiv_y_map[id_] = np.random.normal(0.5, 1.5)
+            indiv_y_map[id_] = rng.normal(0.5, 1.5)
         else:
-            indiv_y_map[id_] = np.random.normal(0, 1)
+            indiv_y_map[id_] = rng.normal(0, 1)
     
     df['Y'] += df['id'].map(indiv_y_map)
     
-    # 添加时间趋势 - 处理组和控制组有不同的趋势
-    time_trend_y = np.zeros(len(df))
-    for idx, row in df.iterrows():
-        year_idx = row['year'] - start_year
-        if row['Group'] == 'Control':
-            time_trend_y[idx] = 0.3 * (year_idx / (total_years - 1))
-        else:
-            time_trend_y[idx] = 0.6 * (year_idx / (total_years - 1))
-    
+    # 添加时间趋势 - 处理组和控制组有不同的趋势（向量化）
+    year_idx_y = (df['year'] - start_year) / (total_years - 1)
+    time_trend_y = np.where(
+        df['Group'] == 'Control', 0.3 * year_idx_y, 0.6 * year_idx_y
+    )
     df['Y'] += time_trend_y
     
     # 添加随机噪声
-    df['Y'] += np.random.normal(0, 1, size=len(df))
+    df['Y'] += rng.normal(0, 1, size=len(df))
     # 删除Group列
     df = df.drop(columns=['Group'])
     

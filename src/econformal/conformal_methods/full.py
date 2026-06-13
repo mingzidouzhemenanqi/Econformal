@@ -11,9 +11,11 @@ class Conformal(ConformalBase):
 
     """
     def __init__(self, econ_model, data: pd.DataFrame, time: str, id: str,
-                y_col: str, treat_col: str, coverage: float, 
+                y_col: str, treat_col: str, coverage: float,
                 nulls: list,
-                controls_col: list=[], **kwargs):
+                controls_col: list=None, **kwargs):
+        if controls_col is None:
+            controls_col = []
         if nulls is None or len(nulls) == 0:
             raise ValueError(
                 "Full Conformal 方法需要用户提供 nulls 参数（原假设列表）。"
@@ -62,6 +64,17 @@ class Conformal(ConformalBase):
         '2. 用p_value_matrix从nulls中找出上下界，组成置信区间'
         confidence_interval = self.predict()
 
+        # 检查是否所有置信区间边界均为 NaN（nulls 范围完全不够）
+        nan_mask = np.isnan(confidence_interval).all(axis=1)
+        if nan_mask.any():
+            affected = time_list[nan_mask]
+            raise ValueError(
+                f"在时间点 {list(affected)}，所有 nulls 均被拒绝，"
+                f"置信区间边界全部为 NaN。"
+                f"当前 nulls 范围 [{self.nulls[0]:.4f}, {self.nulls[-1]:.4f}] 太窄，"
+                f"请扩大 nulls 范围（如 np.linspace(-50, 50, 100)）后重试。"
+            )
+
         '3. 结果转化，将矩阵转化成dataframe'
         self.conformal_interval = self.result_to_dataframe(confidence_interval, time_list)
 
@@ -76,8 +89,14 @@ class Conformal(ConformalBase):
         '第一层循环：时间'
         for i, treat_time_conformal in enumerate(tqdm(time_list, desc='p_value_matrix计算: ')):
             
-            # 提取self.data中，self.time列的小于self.treat_time的行,且self.time等于treat_time_conformal的行，作为准增强数据
-            conformal_data_pro_0 = self.data[(self.data[self.time] < self.treat_time) | (self.data[self.time] == treat_time_conformal)]
+            # 提取从起始到当前测试时间点（含）的所有数据。
+            # 使用 `<= treat_time_conformal` 而非原来的 `(< self.treat_time) | (== treat_time_conformal)`，
+            # 以确保 self.treat_time（及其中间处理时点）始终包含在数据中。
+            # 这对于 DID 至关重要：DID 需要实际的 treatment 时间来正确计算 relative_time，
+            # 若跳过 self.treat_time，DID 会误将 treat_time_conformal 当作最早处理时间，
+            # 导致 relative_time 映射偏移、event dummies 移位。
+            # SC/SDID 不受此影响（它们使用 treat_col 值而非 relative_time），
+            conformal_data_pro_0 = self.data[self.data[self.time] <= treat_time_conformal]
 
             # 提前计算目标行的布尔 mask（对所有 null 都相同，避免内层循环重复扫描）
             target_mask = conformal_data_pro_0[self.id].isin(self.target_id_list) & (conformal_data_pro_0[self.time] == treat_time_conformal)
@@ -92,8 +111,11 @@ class Conformal(ConformalBase):
                 # 将增强数据集中目标行的 y 值减去 null
                 conformal_data_pro.loc[target_mask, self.y_col] -= null
                 
-                # 使用增强数据训练模型            
-                fit_econmodel_data = self.econ_model.fit_econmodel(data=conformal_data_pro, time=self.time, id=self.id, y_col=self.y_col, treat_col=self.treat_col, coverage=self.coverage, controls_col=self.controls_col)
+                # 使用增强数据训练模型（透传用户 kwargs 确保内外拟合规格一致）
+                fit_econmodel_data = self.econ_model.fit_econmodel(data=conformal_data_pro, time=self.time, id=self.id, y_col=self.y_col, treat_col=self.treat_col, coverage=self.coverage, controls_col=self.controls_col, **self._econ_kwargs)
+
+                # 校验返回结果格式
+                self._validate_econ_results(fit_econmodel_data, context=f'Full(t={treat_time_conformal}, null={null:.4f})')
 
                 # 获取处理效应
                 residuals = fit_econmodel_data[['effect']]
@@ -108,6 +130,10 @@ class Conformal(ConformalBase):
     
     def predict(self):
         """为每个新样本计算预测区间"""
+        if not hasattr(self, 'p_value_matrix'):
+            raise RuntimeError(
+                "尚未计算 p_value_matrix，请先调用 fit() 再调用 predict()。"
+            )
         # 生成nulls矩阵,（行为p_value_matrix行数，列为nulls长度，每行都是nulls，方便找区间）
         nulls_matrix = np.tile(self.nulls, (self.p_value_matrix.shape[0], 1)).astype(float)
 
@@ -147,10 +173,15 @@ class Conformal(ConformalBase):
         resid_df['post_intervention'] = False  # 先将所有值设为False
         # 将'post_intervention'列最后一个元素设置为True
         resid_df.iloc[-1, resid_df.columns.get_loc('post_intervention')] = True
-        
+
         u = resid_df["effect"].values
         post_intervention = resid_df["post_intervention"].values
-        
+
+        # 注意：使用 np.roll 进行圆形置换（circular permutation）。
+        # 该方法对无趋势的平稳时间序列近似有效，但对于存在单调趋势的面板数据，
+        # 圆形移位会引入原始数据中不存在的人工模式（如 roll([1,2,3,4,5], 1)
+        # = [5,1,2,3,4]），违反交换性假设。未来的改进可考虑使用块置换
+        # （block permutation）来更好地保持时序依赖结构。
         block_permutations = np.stack([np.roll(u, permutation, axis=0)[post_intervention]
                                     for permutation in range(len(u))])
         

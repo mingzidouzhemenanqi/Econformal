@@ -44,9 +44,15 @@ class Econometric():
         ci_lower_col = f"{int(coverage * 100)}%_conf_lower"
         ci_upper_col = f"{int(coverage * 100)}%_conf_upper"
         ########### 数据检查 #############
-        # 0. 自动识别event_window，默认窗口期为全样本周期
+        # 0. 自动识别event_window，默认窗口期为全样本周期。
+        # 注意：event_window 不缓存。每次调用都会基于当前数据重新计算，
+        # 因为在 conformal 子采样中，数据的相对时间映射可能不同。
+        # 若用户显式传入 event_window，F1 的 kwargs 透传机制确保
+        # 所有内外拟合使用相同窗口。
         if event_window is None:
             self.event_window = self._auto_determine_event_window(data=data, time=time, treat_col=treat_col)
+        else:
+            self.event_window = event_window
         
         # 1. 检查data中变量列名是否有以‘event_’开头的变量，如果有则抛出错误，并提示修改变量名，否则会导致估计出错
         if any(col.startswith('event_') for col in data.columns):
@@ -74,7 +80,27 @@ class Econometric():
         X = sm.add_constant(X)
 
         ########### 回归计算 #############
-        # 使用PanelOLS进行面板回归
+        # 过滤掉全零 event dummies（conformal 子采样数据中某些相对时间可能无观测）
+        nonzero_event_cols = [c for c in event_cols if X[c].abs().sum() > 1e-12]
+        if not nonzero_event_cols:
+            raise ValueError(
+                "所有事件虚拟变量均为全零列，无法进行 DID 估计。"
+                "可能原因：event_window 中的相对时间在子采样数据中不存在。"
+                "请检查 event_window 是否超出数据的时间范围，或尝试让模型自动检测窗口。"
+            )
+        # 重建 X 矩阵（仅保留非全零的 event dummies + controls + constant）
+        if controls_col is not None:
+            X = df[nonzero_event_cols + controls_col]
+        else:
+            X = df[nonzero_event_cols]
+        X = sm.add_constant(X)
+        event_cols = nonzero_event_cols  # 后续提取结果仅遍历存在的 event dummies
+
+        # 使用 PanelOLS 进行面板回归。
+        # 注意：entity_effects=True 和 time_effects=True 与事件时间虚拟变量
+        # （event dummies）存在隐含共线性——时间固定效应是所有 event dummies 的
+        # 线性组合。PanelOLS 会通过内部降秩处理静默解决，但升维后的系数解释
+        # 与传统不含时间 FE 的事件研究法略有不同。这是计量设计选择，非错误。
         self.model = PanelOLS(y, X, entity_effects=True, time_effects=True)
         self.results = self.model.fit(cov_type='clustered', cluster_entity=True)
         
@@ -95,7 +121,7 @@ class Econometric():
         # 创建结果DataFrame
         results_list = []
         for t in range(self.event_window[0], self.event_window[1] + 1):
-            if t != -1:  # 跳过被省略的基准期
+            if t != self._omitted:  # 跳过基准期
                 if t in effect_dict:
                     results_list.append({
                         'relative_time': t,
@@ -104,6 +130,17 @@ class Econometric():
                         'p-value': effect_dict[t]['p_value'],
                         ci_lower_col: effect_dict[t]['ci_lower'],
                         ci_upper_col: effect_dict[t]['ci_upper']
+                    })
+                else:
+                    # 该相对时间的 event dummy 为全零列（子采样数据中不存在），
+                    # 无法估计，填充 NaN 而非静默跳过
+                    results_list.append({
+                        'relative_time': t,
+                        'effect': float('nan'),
+                        'std_error': float('nan'),
+                        'p-value': float('nan'),
+                        ci_lower_col: float('nan'),
+                        ci_upper_col: float('nan')
                     })
             # 对于被省略的基准期，效应为0
             else:
@@ -122,6 +159,16 @@ class Econometric():
         self.results_df[time] = self.results_df['relative_time'].map(time_mapping)
         # 删除relative_time列
         self.results_df = self.results_df.drop(columns=['relative_time'])
+        # 过滤掉时间映射失败的 rows（event_window 超出数据范围时会产生 NaN 时间）
+        n_before = len(self.results_df)
+        self.results_df = self.results_df.dropna(subset=[time])
+        n_dropped = n_before - len(self.results_df)
+        if n_dropped > 0:
+            import warnings
+            warnings.warn(
+                f"event_window 中的 {n_dropped} 个相对时间在数据中无对应绝对时间，"
+                f"已从结果中移除。请检查 event_window 是否超出数据的时间范围。"
+            )
         
         return self.results_df
 
@@ -149,7 +196,18 @@ class Econometric():
         
         if len(treat_times) == 0:
             raise ValueError("数据中没有处理事件")
-        
+
+        # DID 当前仅支持所有处理个体在同一时间首次被处理。
+        # 检查每个个体的首次处理时间是否一致。
+        first_treat = df[df[treat_col] == 1].groupby(id_col)[time_col].min()
+        unique_first_treat = first_treat.unique()
+        if len(unique_first_treat) > 1:
+            raise ValueError(
+                f"检测到多个不同的首次处理时间: {sorted(unique_first_treat)}。"
+                f"DID 当前仅支持所有处理个体在同一时点首次接受处理（非交错处理）。"
+                f"请使用 SDID 或其他支持交错处理的方法。"
+            )
+
         # 假设所有样本在同一时间被处理
         treat_time = treat_times.min()
         
@@ -185,7 +243,16 @@ class Econometric():
         # 6. 识别从未处理的样本，并将其relative_time设置为NaN
         # 找到所有被处理的个体
         treated_ids = df[df[treat_col] == 1][id_col].unique()
-        
+
+        # 检查是否存在对照组：若所有个体均被处理，事件虚拟变量与时间固定效应完全共线
+        all_ids = df[id_col].unique()
+        if len(treated_ids) == len(all_ids):
+            raise ValueError(
+                f"所有 {len(all_ids)} 个个体均为处理组，没有对照组。"
+                f"DID 事件研究法需要至少一个从未被处理的个体作为控制组，"
+                f"以识别事件虚拟变量与时间固定效应。"
+            )
+
         # 标记从未处理的个体
         df['is_treated'] = df[id_col].isin(treated_ids)
         
@@ -200,12 +267,21 @@ class Econometric():
 
     
     def _create_event_dummies(self, data: pd.DataFrame) -> pd.DataFrame:
-        """创建事件时间虚拟变量"""
+        """创建事件时间虚拟变量
+
+        注意：硬编码省略 t=-1（处理前最后一期）作为基准期以避免多重共线性。
+        若 event_window 不包含 -1（如窗口为 (0, post_window)），则没有虚拟变量
+        被省略，所有 event dummies + time_effects + entity_effects 将完全共线。
+        此时 PanelOLS 会静默丢弃变量。应确保 event_window 包含 t=-1。
+        """
         # 为事件窗口内的每个时间点创建虚拟变量
         min_time, max_time = self.event_window
-        
+
+        # 确定要省略的基准期：优先 t=-1，若不在窗口中则选最小相对时间
+        self._omitted = -1 if min_time <= -1 <= max_time else min_time
+
         for t in range(min_time, max_time + 1):
-            if t != -1:  # 避免多重共线性，省略一期（通常为t=-1）
+            if t != self._omitted:  # 避免多重共线性，省略基准期
                 data[f'event_{t}'] = (data['relative_time'] == t).astype(int)
         
         return data
@@ -230,11 +306,12 @@ class Econometric():
         """
         # 找到所有处理事件的时间点
         treat_times = data[data[treat_col] == 1][time].unique()
-        # 找到最早的处理时间
-        first_treat_time = treat_times.min()
-        
+
         if len(treat_times) == 0:
             raise ValueError("数据中没有处理事件，无法确定事件窗口")
+
+        # 找到最早的处理时间
+        first_treat_time = treat_times.min()
         
         time_list = data[time].unique()
 

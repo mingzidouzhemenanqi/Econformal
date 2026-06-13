@@ -36,6 +36,9 @@ class Econformal:
         self.treat_col = treat_col
 
         check.validate_data_format(data, self.time, self.id, self.treat_col)
+        check.validate_y_col_and_controls(data, self.y_col, self.controls_col)
+        check.validate_no_nan(data, self.y_col, self.treat_col,
+                              self.time, self.id, self.controls_col)
         self.data = check.preprocess_data(data, self.id, self.time)
 
 
@@ -60,6 +63,20 @@ class Econformal:
                 90%_conformal_lower
                 90%_conformal_upper
         """
+        # 校验多余的 kwargs：防止参数名拼写错误被静默吸收
+        _known_kwargs = {
+            'zeta', 'zeta_time', 'event_window', 'random_state',
+            'max_placebo_units', 'cv_folds', 'cv_strategy',
+        }
+        _unrecognized = {k for k in kwargs if k not in _known_kwargs}
+        if _unrecognized:
+            import warnings as _w
+            _w.warn(
+                f"conformal_inference() 收到未识别的关键字参数: "
+                f"{sorted(_unrecognized)}。这些参数将被忽略。可能是拼写错误。"
+                f"已知的参数: {sorted(_known_kwargs)}"
+            )
+
         # 校验用户输入的模型是否可用，并获取模型类
         EconModelCls = get_econ_model(econ_model)
         ConformalCls = get_conformal_model(conformal_model)
@@ -73,6 +90,8 @@ class Econformal:
         self.ci_upper_col = f"{int(self.coverage * 100)}%_conformal_upper"
 
         ########### 执行计量经济学模型拟合 ##########
+        # _econ_fit 内部会实例化并拟合计量模型，设置 self.econ_model。
+        # 全量拟合的结果用于最终合并输出（effect/std_error/p-value 列）。
         self.econ_results = self._econ_fit(EconModelCls, **kwargs)
 
         ########### 执行共形推断进行区间预测 ##########
@@ -157,7 +176,7 @@ class Econformal:
 
         if self.econ_results is None:
             raise RuntimeError("econ_results 为 None，请通过 conformal_inference() 调用")
-        
+
         # ========== 2. 验证 conformal_interval ==========
         if self.conformal_interval.empty:
             raise ValueError("共形推断区间为空，无法合并")
@@ -193,7 +212,25 @@ class Econformal:
         # ========== 4. 添加时间列（直接修改，节省内存）==========
         self.conformal_interval[self.time] = self.conformal_interval.index
         self.conformal_interval.reset_index(drop=True, inplace=True)
-        
+
+        # ========== 4.5 统一时间列类型，防止 merge 失败 ==========
+        # SC/SDID 模型会将 time 列转为 int，若原始 dtype 非 int（如 str/datetime）
+        # 则 pd.merge 无法匹配。统一转为字符串类型确保兼容。
+        ci_time_dtype = self.conformal_interval[self.time].dtype
+        econ_time_dtype = self.econ_results[self.time].dtype
+        if ci_time_dtype != econ_time_dtype:
+            import warnings as _w
+            _w.warn(
+                f"时间列类型不一致：conformal_interval 为 {ci_time_dtype}，"
+                f"econ_results 为 {econ_time_dtype}。将统一转为字符串类型以进行合并。"
+            )
+            self.conformal_interval[self.time] = (
+                self.conformal_interval[self.time].astype(str)
+            )
+            self.econ_results[self.time] = (
+                self.econ_results[self.time].astype(str)
+            )
+
         # ========== 5. 执行合并 ==========
         return pd.merge(
             self.conformal_interval,

@@ -42,6 +42,11 @@ class Econometric:
         # 0. 提取可选的超参数
         zeta = kwargs.get("zeta", None)       # None → 自动估计
         zeta_time = kwargs.get("zeta_time", None)
+        # 仅在首次设置或用户显式传入时更新 random_state，防止 conformal 重拟合覆盖用户指定值
+        if "random_state" in kwargs:
+            self._random_state = kwargs["random_state"]
+        elif not hasattr(self, '_random_state'):
+            self._random_state = 42
 
         # 1. 识别处理信息
         treated_ids = check.get_treated_individuals(data, id, time, treat_col)
@@ -188,8 +193,8 @@ class Econometric:
             })
 
         result_df = pd.DataFrame(rows)
-        # 统一时间列类型
-        result_df[time] = result_df[time].astype(int)
+        # 保留原始时间列类型，不强制转换
+        # （避免 datetime/float/str 类型被破坏导致 merge 失败）
 
         self.results_df = result_df
         return result_df
@@ -246,6 +251,12 @@ class Econometric:
                 f"SDID 单元权重优化未收敛 (状态: {problem.status})，回退为等权重。"
             )
             return np.ones(N_co) / N_co, 0.0
+
+        if problem.status == "optimal_inaccurate":
+            warnings.warn(
+                "SDID 单元权重优化返回 'optimal_inaccurate'，"
+                "解可能数值不精确。建议检查数据质量或调整 zeta 参数。"
+            )
 
         omega = w.value
         intercept = float(r.value) if r.value is not None else 0.0
@@ -340,6 +351,12 @@ class Econometric:
             )
             return np.ones(T_pre) / T_pre
 
+        if problem.status == "optimal_inaccurate":
+            warnings.warn(
+                "SDID 时间权重优化返回 'optimal_inaccurate'，"
+                "解可能数值不精确。建议检查数据质量或调整 zeta_time 参数。"
+            )
+
         lam_val = lam.value
         lam_val = np.maximum(lam_val, 0)
         s = lam_val.sum()
@@ -366,15 +383,11 @@ class Econometric:
         ζ = σ̂ · T_post^(1/4) / sqrt(N_co)
         σ̂ 来自结果差分标准差（处理组与控制组的混合估计）。
         """
-        # 处理组差分标准差
+        # 处理组和控制组的合并差分标准差（与论文一致：pooled std over all diffs）
         d_tr = np.diff(Y_pre_tr)
-        s_tr = np.std(d_tr, ddof=1) if len(d_tr) > 1 else 0.0
-
-        # 控制组差分标准差（平均）
         d_co = np.diff(Y_pre_co, axis=0)
-        s_co = np.mean(np.std(d_co, axis=0, ddof=1)) if d_co.shape[0] > 1 else 0.0
-
-        sigma_hat = 0.5 * (s_tr + s_co)
+        all_diffs = np.concatenate([d_co.ravel(), d_tr])
+        sigma_hat = float(np.std(all_diffs, ddof=1)) if len(all_diffs) > 1 else 0.0
         if sigma_hat < 1e-10:
             sigma_hat = 1e-10
 
@@ -477,6 +490,22 @@ class Econometric:
         # ── Placebo 方差估计（首次计算后缓存）──
         if hasattr(self, '_cached_placebo_effects_'):
             placebo_effects = self._cached_placebo_effects_
+            # 检查缓存来自不同数据规模（如 Full Conformal 用截断数据重拟合时
+            # 复用全量数据的 placebo 效应），发出警告
+            _cache = self._fit_data_cache_ if hasattr(self, '_fit_data_cache_') else {}
+            _cached_n_post_prev = _cache.get('_dims', (0, 0, -1))[2]
+            _cached_treat_time = _cache.get('treat_time')
+            _current_n_post = (
+                int((time_index >= _cached_treat_time).sum())
+                if _cached_treat_time is not None else _cached_n_post_prev
+            )
+            if _cached_n_post_prev > _current_n_post and _cached_n_post_prev > 1:
+                warnings.warn(
+                    f"SDID placebo 标准误来自完整数据（{_cached_n_post_prev} 个处理后时点），"
+                    f"但当前拟合仅使用 {_current_n_post} 个处理后时点。"
+                    f"标准误可能不完全适用于当前截断数据。"
+                    f"（这通常发生在 Full Conformal 重拟合场景。）"
+                )
         else:
             placebo_effects = self._compute_placebo_effects(
                 pre_effects, all_effects, time_index
@@ -567,7 +596,7 @@ class Econometric:
 
         # 限制安慰剂计算数量
         n_placebo = min(n_co, max_placebo_units)
-        rng = np.random.default_rng(42)
+        rng = np.random.default_rng(self._random_state)
         placebo_sample = list(
             rng.choice(control_units, size=n_placebo, replace=False)
         )
