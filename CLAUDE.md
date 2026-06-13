@@ -1,4 +1,4 @@
-# Econformal v0.1.0 — 计量经济学共形推断工具包
+# Econformal v0.2.0 — 计量经济学共形推断工具包
 
 Econformal 是一个将共形推断（Conformal Inference）与计量经济学模型相结合的 Python 工具包，为 DID、Synthetic Control 等计量模型的 treatment effect 提供具有统计保证的不确定性量化（置信区间）。
 
@@ -34,7 +34,7 @@ Econformal/
 - **Python**: 3.14（`.python-version`）
 - **包管理**: uv（`uv.lock` 已提交）
 - **构建**: hatchling
-- **PyPI**: `econformal` (v0.1.0)
+- **PyPI**: `econformal` (v0.2.0)
 - **操作系统**: Windows 11
 
 ### 重要：uv 命令使用规范
@@ -273,7 +273,7 @@ Econformal(data, time='year', id='id', y_col='Y', treat_col='Treat', controls_co
 
 ## 项目状态
 
-- 当前版本 0.1.0（Alpha），已发布 PyPI
+- 当前版本 0.2.0（Alpha），已发布 PyPI
 - 已实现：DID (事件研究法)、SC (合成控制)、SDID (合成双重差分)、Full/Split/LOO/JK+/CV+ Conformal
 - SC 控制变量支持有限（增强矩阵法，需至少一个处理后时期）
 - SDID 支持控制变量（增强矩阵法，同 SC 模式），支持多处理单元

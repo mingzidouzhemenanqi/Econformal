@@ -1,4 +1,4 @@
-# Econformal v0.1.0 → v2.0.2 测试报告
+# Econformal v0.2.0 测试报告
 
 > **生成日期**: 2026-06-12  
 > **测试环境**: Windows 11 Pro, Python 3.14.5, pytest 9.0.3  
@@ -12,7 +12,7 @@ Econformal 是一个将共形推断（Conformal Inference）与计量经济学�
 
 | 项目 | 详情 |
 |------|------|
-| 版本 | 0.1.0 (当前), v2.0.2 (目标版本号) |
+| 版本 | 0.2.0 |
 | Python | >=3.8, 测试于 3.14.5 |
 | 包管理 | uv + hatchling |
 | 核心依赖 | pandas, numpy, statsmodels, linearmodels, cvxpy, scikit-learn, matplotlib, tqdm |
