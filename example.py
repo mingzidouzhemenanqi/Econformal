@@ -1,6 +1,7 @@
 
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from econformal import Econformal
 from econformal.tools.generate_data import generate_test_panel_data
 
@@ -19,8 +20,8 @@ result = model.conformal_inference(econ_model = 'sc', conformal_model='full', nu
 print(result)
 
 # 用户查看结果
-fig = model.plot_ci_inteveral()
-fig.show()
+fig = model.plot_ci_interval()
+plt.show()
 '''
 
 
@@ -43,13 +44,13 @@ model = Econformal(data=data, time='year', id='id', y_col='Y', controls_col=['X1
 nulls = np.linspace(-10, 10, 100)
 
 # 计量模型拟合
-result = model.conformal_inference(econ_model = 'did', conformal_model='loo', nulls=nulls, coverage=0.90)
+result = model.conformal_inference(econ_model = 'did', conformal_model='full', nulls=nulls, coverage=0.90)
 
 print(result)
 
 # 用户查看结果
-fig = model.plot_ci_interval()
-fig.show()
+fig = model.plot_ci_interval(traditional=True)
+plt.show()
 
 """SDID"""
 """
@@ -73,6 +74,6 @@ result = model.conformal_inference(econ_model = 'SDID', conformal_model='full', 
 print(result)
 
 # 用户查看结果
-fig = model.plot_ci_inteveral(traditional=True)
-fig.show()
+fig = model.plot_ci_interval(traditional=True)
+plt.show()
 """

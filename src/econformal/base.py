@@ -106,14 +106,70 @@ class Econformal:
         return self.results
 
     def plot_ci_interval(self, traditional=False):
-        """绘制结果及置信区间"""
-        if getattr(self, 'results', None) is None:
-            raise RuntimeError("请先使用conformal_inference()计算共形推断置信区间")
+        """Draw the conformal-inference confidence-interval plot.
 
+        Requires a prior call to ``conformal_inference()``.
+
+        Parameters
+        ----------
+        traditional : bool
+            If True, overlay the traditional (non-conformal) confidence band
+            as a shaded area.
+
+        Returns
+        -------
+        matplotlib.figure.Figure
+        """
+        # --- Guard: results must exist ---
+        if getattr(self, 'results', None) is None:
+            raise RuntimeError(
+                "请先使用conformal_inference()计算共形推断置信区间"
+            )
+
+        # --- Validate required columns ---
+        _required = [self.time, 'effect', self.ci_lower_col, self.ci_upper_col]
+        _missing = [c for c in _required if c not in self.results.columns]
+        if _missing:
+            raise ValueError(
+                f"self.results 缺少必需列: {_missing}。"
+                f"当前列: {list(self.results.columns)}"
+            )
+
+        # --- Treatment time ---
+        treat_time = check.get_first_treatment_year(
+            data=self.data, id=self.id,
+            time=self.time, treat_col=self.treat_col,
+        )
+
+        # --- Traditional CI column names ---
+        trad_lower_col = None
+        trad_upper_col = None
         if traditional:
-            fig = plot.ci_interval_compare(self)
-        else:
-            fig = plot.ci_interval(self)
+            cov_pct = int(self.coverage * 100)
+            trad_lower_col = f"{cov_pct}%_conf_lower"
+            trad_upper_col = f"{cov_pct}%_conf_upper"
+            _trad_missing = [
+                c for c in [trad_lower_col, trad_upper_col]
+                if c not in self.results.columns
+            ]
+            if _trad_missing:
+                raise ValueError(
+                    f"traditional=True 但 self.results 缺少传统 CI 列: "
+                    f"{_trad_missing}。当前列: {list(self.results.columns)}"
+                )
+
+        # --- Delegate to pure drawing function ---
+        fig = plot.create_ci_plot(
+            plot_data=self.results,
+            time_col=self.time,
+            ci_lower_col=self.ci_lower_col,
+            ci_upper_col=self.ci_upper_col,
+            coverage=self.coverage,
+            treat_time=treat_time,
+            traditional=traditional,
+            trad_lower_col=trad_lower_col,
+            trad_upper_col=trad_upper_col,
+        )
         return fig
 
 

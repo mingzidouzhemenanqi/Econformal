@@ -1,130 +1,137 @@
+"""Plotting utilities for Econformal — conformal and traditional confidence intervals."""
+
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
-# 设置中文字体支持
-plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'WenQuanYi Micro Hei', 'sans-serif'] 
-plt.rcParams['axes.unicode_minus'] = False 
-
-import warnings
-warnings.filterwarnings('ignore')
-
-from matplotlib import style
-style.use("ggplot")
-from . import check
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 
 
-def ci_interval(self_data):
-    
-    # 读取结果数据表
-    plot_data = self_data.results
-    # 读取首次处理时间
-    treat_time = check.get_first_treatment_year(data=self_data.data, id=self_data.id, time=self_data.time, treat_col=self_data.treat_col)
-    # 将self_data.time列设置为index
-    plot_data.set_index(self_data.time, inplace=True)
+def create_ci_plot(
+    plot_data: pd.DataFrame,
+    time_col: str,
+    ci_lower_col: str,
+    ci_upper_col: str,
+    coverage: float,
+    treat_time,
+    *,
+    traditional: bool = False,
+    trad_lower_col: str | None = None,
+    trad_upper_col: str | None = None,
+    figsize: tuple[float, float] = (10, 5),
+    ax: Axes | None = None,
+) -> Figure:
+    """Draw a conformal-inference confidence-interval plot.
 
-    # 图像时间范围
-    # 起始时间：pre_data的index最小值
-    start_time = plot_data.index.min()
-    # 结束时间：pre_data的index最大值
-    end_time = plot_data.index.max()
+    Parameters
+    ----------
+    plot_data : pd.DataFrame
+        Must contain columns ``time_col``, ``"effect"``, ``ci_lower_col``,
+        ``ci_upper_col``, and when ``traditional=True`` also ``trad_lower_col``
+        / ``trad_upper_col``.
+    time_col : str
+        Name of the time column (x-axis).
+    ci_lower_col, ci_upper_col : str
+        Column names for conformal lower / upper bounds.
+    coverage : float
+        Coverage level in (0, 1), e.g. 0.9 for 90%.
+    treat_time : scalar
+        x-coordinate for the vertical treatment reference line.
+    traditional : bool
+        If True, overlay traditional CI as a semi-transparent shaded band.
+    trad_lower_col, trad_upper_col : str or None
+        Column names for traditional lower / upper bounds (required when
+        ``traditional=True``).
+    figsize : tuple[float, float]
+        (width, height) in inches; used only when *ax* is None.
+    ax : Axes or None
+        If provided, draw on this axes (enables subplot composition).
+        If None, a new figure + axes is created.
 
+    Returns
+    -------
+    matplotlib.figure.Figure
+        The figure containing the plot.
+    """
+    # ------ 1. copy to avoid mutating caller's DataFrame ------
+    df = plot_data.copy()
 
-    # 政策效应范围
-    # pre_data中residuals列最大值和ci_df中f"{int(plot_data.coverage*100)}%_ci_upper"列最大值中取最大值
-    max_y = max(plot_data.effect.max(), plot_data[self_data.ci_upper_col].max())
-    # pre_data中residuals列最小值和ci_df中f"{int(plot_data.coverage*100)}%_ci_lower"列最小值中取最小值
-    min_y = min(plot_data.effect.min(), plot_data[self_data.ci_lower_col].min())
+    # ------ 2. set index on the copy, extract time values ------
+    df = df.set_index(time_col)
+    time_values = df.index.values
+    x_min, x_max = time_values.min(), time_values.max()
 
+    # ------ 3. axes setup ------
+    if ax is None:
+        fig, ax = plt.subplots(figsize=figsize)
+    else:
+        fig = ax.figure
+        if fig is None:
+            raise ValueError("The provided *ax* is not attached to a figure.")
 
-    
-    # 图片画幅
-    plt.figure(figsize=(10,5))
+    # ------ 4. y-range ------
+    mask = df[ci_lower_col].notna() & df[ci_upper_col].notna()
+    y_min = df["effect"].min()
+    y_max = df["effect"].max()
+    if mask.any():
+        y_min = min(y_min, df.loc[mask, ci_lower_col].min())
+        y_max = max(y_max, df.loc[mask, ci_upper_col].max())
+    pad = (y_max - y_min) * 0.05 or 0.5
+    y_min, y_max = y_min - pad, y_max + pad
 
-    # 绘制政策效应共性预测区间
-    plt.fill_between(plot_data.index, plot_data[self_data.ci_lower_col], plot_data[self_data.ci_upper_col], alpha=0.2,  color="C1")
-    # 绘制残差曲线
-    plt.plot(plot_data.index, plot_data["effect"], label='Effect', color="C1")
+    # ------ 5. reference lines ------
+    ax.axhline(y=0, color="black", linewidth=1.5)
+    ax.axvline(x=treat_time, color="black", linestyle="--",
+               linewidth=1.5, label="Treat")
 
-    # 绘制横轴
-    plt.hlines(y=0, xmin=start_time, xmax=end_time, lw=2, color="Black")
-    # 绘制纵轴
-    plt.vlines(x=treat_time, ymin=min_y, ymax=max_y, linestyle=":", color="Black", lw=2, label='Treat')
-    # 图例
-    plt.legend()
-    # 在图例中添加alpha=self_data.coverage%
-    plt.legend(title=f"Coverage: {int(self_data.coverage*100)}%")
-    # y轴标题
-    # plt.ylabel("")
-    
-    # 将图片保存到工作路径
-    # plt.savefig(f"{plot_data.y_col},alpha={int(plot_data.coverage*100)}%.png")
-    # plt.show()
+    # ------ 6. effect line ------
+    ax.plot(time_values, df["effect"], color="C1", linewidth=1.5,
+            label="Effect")
 
-    return plt
+    # ------ 7. conformal I-bars ------
+    cap_width = (x_max - x_min) * 0.015
+    if cap_width <= 0:
+        cap_width = 0.2  # fallback for single time-point
 
+    for idx, row in df.iterrows():
+        low = row[ci_lower_col]
+        high = row[ci_upper_col]
+        if pd.isna(low) or pd.isna(high):
+            continue
+        # vertical stem
+        ax.plot([idx, idx], [low, high], color="C1", linewidth=1.5)
+        # top cap
+        ax.plot([idx - cap_width, idx + cap_width], [high, high],
+                color="C1", linewidth=1.5)
+        # bottom cap
+        ax.plot([idx - cap_width, idx + cap_width], [low, low],
+                color="C1", linewidth=1.5)
 
-def ci_interval_compare(self_data):
-    
-    # 读取结果数据表
-    plot_data = self_data.results
-    # 读取首次处理时间
-    treat_time = check.get_first_treatment_year(data=self_data.data, id=self_data.id, time=self_data.time, treat_col=self_data.treat_col)
-    # 将self_data.time列设置为index
-    plot_data.set_index(self_data.time, inplace=True)
+    # ------ 8. traditional CI (shaded area) ------
+    if traditional:
+        if trad_lower_col is None or trad_upper_col is None:
+            raise ValueError(
+                "traditional=True requires trad_lower_col and trad_upper_col."
+            )
+        trad_mask = df[trad_lower_col].notna() & df[trad_upper_col].notna()
+        if trad_mask.any():
+            ax.fill_between(
+                time_values[trad_mask],
+                df.loc[trad_mask, trad_lower_col],
+                df.loc[trad_mask, trad_upper_col],
+                alpha=0.15, color="gray",
+                label=f"Traditional CI ({int(coverage * 100)}%)",
+            )
 
-    # 图像时间范围
-    # 起始时间：pre_data的index最小值
-    start_time = plot_data.index.min()
-    # 结束时间：pre_data的index最大值
-    end_time = plot_data.index.max()
+    # ------ 9. legend ------
+    ax.legend(title=f"Coverage: {int(coverage * 100)}%")
 
+    # ------ 10. axis limits & labels ------
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_xlabel(time_col)
+    ax.set_ylabel("Effect")
 
-    # 政策效应范围
-    # pre_data中residuals列最大值和ci_df中f"{int(plot_data.coverage*100)}%_ci_upper"列最大值中取最大值
-    max_y = max(plot_data.effect.max(), plot_data[self_data.ci_upper_col].max())
-    # pre_data中residuals列最小值和ci_df中f"{int(plot_data.coverage*100)}%_ci_lower"列最小值中取最小值
-    min_y = min(plot_data.effect.min(), plot_data[self_data.ci_lower_col].min())
-
-
-    
-    # 图片画幅
-    plt.figure(figsize=(10,5))
-
-    # 绘制政策效应共性预测区间
-    plt.fill_between(plot_data.index, plot_data[self_data.ci_lower_col], plot_data[self_data.ci_upper_col], alpha=0.2,  color="C1")
-
-    # 绘制残差曲线
-    plt.plot(plot_data.index, plot_data["effect"], label='Effect', color="C1")
-
-    # 绘制置信区间线段（使用误差棒）
-    cov_pct = int(self_data.coverage * 100)
-    ci_lower_col = f"{cov_pct}%_conf_lower"
-    ci_upper_col = f"{cov_pct}%_conf_upper"
-    time_points = plot_data.index.values
-    for t in time_points:
-        row = plot_data.loc[t]
-        plt.plot([t, t], [row[ci_lower_col], row[ci_upper_col]],
-                color='gray', linewidth=1.5, alpha=0.8)
-        # 在置信区间两端添加小横线
-        plt.plot([t-0.1, t+0.1], [row[ci_lower_col], row[ci_lower_col]],
-                color='gray', linewidth=1.5, alpha=0.8)
-        plt.plot([t-0.1, t+0.1], [row[ci_upper_col], row[ci_upper_col]],
-                color='gray', linewidth=1.5, alpha=0.8)
-    # 绘制横轴
-    plt.hlines(y=0, xmin=start_time, xmax=end_time, lw=2, color="Black")
-    # 绘制纵轴
-    plt.vlines(x=treat_time, ymin=min_y, ymax=max_y, linestyle=":", color="Black", lw=2, label='Treat')
-    # 图例
-    plt.legend()
-    # 在图例中添加alpha=self_data.coverage%
-    plt.legend(title=f"Coverage: {int(self_data.coverage*100)}%")
-    # y轴标题
-    # plt.ylabel("")
-    
-    # 将图片保存到工作路径
-    # plt.savefig(rf'C:\Users\Forry\Desktop\plt\{},alpha={int(plot_data.coverage*100)}%.png"')
-    # plt.show()
-
-    # return 0
-    return plt
+    return fig
