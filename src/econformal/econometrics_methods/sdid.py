@@ -48,6 +48,8 @@ class Econometric:
         elif not hasattr(self, '_random_state'):
             self._random_state = 42
 
+        self._id_col = id  # 缓存 ID 列名，供 _augment_with_controls 使用
+
         # 1. 识别处理信息
         treated_ids = check.get_treated_individuals(data, id, time, treat_col)
         treat_time = check.get_first_treatment_year(data, id, time, treat_col)
@@ -98,6 +100,7 @@ class Econometric:
                 'treated_ids': treated_ids,
                 'treat_time': treat_time,
                 'time_col': time,
+                'id_col': id,
                 'controls_list': _controls_list,
                 'controls_data': controls_data,
                 'df_wide': df_wide,
@@ -415,7 +418,7 @@ class Econometric:
         aug_rows_X = [Y_pre_co]
 
         for c in controls_list:
-            c_wide = controls_data.pivot(index=time, columns="id", values=c)
+            c_wide = controls_data.pivot(index=time, columns=self._id_col, values=c)
             # 对齐列顺序（引入的列若不存在则填 NaN）
             c_wide = c_wide.reindex(columns=df_wide.columns)
             c_pre = c_wide[c_wide.index < treat_time]

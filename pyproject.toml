@@ -1,6 +1,6 @@
 [project]
 name = "econformal"
-version = "0.2.0"
+version = "0.3.0"
 description = "计量经济学模型共形推断工具包 | Conformal Inference Toolkit for Econometric Models"
 readme = "README.md"
 requires-python = ">=3.8"

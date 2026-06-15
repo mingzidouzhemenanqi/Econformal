@@ -70,7 +70,7 @@ model = Econformal(data=data, time='year', id='id', y_col='Y',
 
 result = model.conformal_inference(
     econ_model='did',        # 计量模型: 'did' | 'sc' | 'sdid'
-    conformal_model='full',  # 共形方法: 'full' | 'split'
+    conformal_model='full',  # 共形方法: 'full' | 'split' | 'loo' | 'jk_plus' | 'cv_plus'
     nulls=np.linspace(-10, 10, 100),
     coverage=0.90,
 )
@@ -269,12 +269,33 @@ Econformal(data, time='year', id='id', y_col='Y', treat_col='Treat', controls_co
 - `pandas`, `numpy` — 数据处理
 - `matplotlib`, `seaborn` — 可视化
 - `scikit-learn` — SC 模型基类（`BaseEstimator`）
-- `tqdm` — Full Conformal 进度条
+- `tqdm` — 全方法进度条
 
 ## 项目状态
 
-- 当前版本 0.2.0（Alpha），已发布 PyPI
+- 当前版本 0.3.0，已发布 PyPI
 - 已实现：DID (事件研究法)、SC (合成控制)、SDID (合成双重差分)、Full/Split/LOO/JK+/CV+ Conformal
 - SC 控制变量支持有限（增强矩阵法，需至少一个处理后时期）
 - SDID 支持控制变量（增强矩阵法，同 SC 模式），支持多处理单元
 - Split/LOO/JK+/CV+ Conformal 已接入 `ConformalBase` 抽象基类
+
+## 已知方法论局限
+
+### Split Conformal：校准分数为 in-sample
+
+`split.py` 的校准流程中，模型在 train+cal 合并数据上拟合，校准分数提取自
+同一模型的 in-sample 残差，而非 out-of-sample 预测误差。这会导致分位数偏小、
+区间偏窄，实际覆盖率可能低于名义值。
+
+### Full Conformal：Circular Permutation
+
+`full.py` 的置换检验使用 `np.roll` 循环移位 effect 向量，对于存在时间趋势的
+面板数据，可能违反可交换性假设。当前通过仅保留 1 个处理后时期的数据筛选策略
+（`(time < treat_time) | (time == tc)`）缓解了此问题。
+
+### JK+ / CV+ 与 DID 配合
+
+标准 Jackknife+ 和 CV+ 的 `>= 1-2α` 覆盖保证依赖于 held-out 预测误差。
+DID 的 PanelOLS 无法对单个被剔除时期做独立预测，因此 JK+/CV+ 在 DID 模式下
+使用代理残差（剩余处理前时期的 mean(|effect|)），理论保证不成立。
+SC 模式下此保证正常成立。代码中已通过 UserWarning 告知用户。

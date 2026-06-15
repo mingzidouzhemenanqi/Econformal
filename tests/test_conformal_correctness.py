@@ -153,3 +153,42 @@ def test_ci_nonzero_width(econ, conf, fixture_name, request):
     if len(valid) > 0:
         widths = valid[UPPER_COL] - valid[LOWER_COL]
         assert (widths >= 0).all(), f"Negative CI width for {econ}+{conf}"
+
+
+# ── JK+ with DID path ──────────────────────────────────────────────────
+
+def test_jk_plus_with_did():
+    """JK+ should run (with warning) for DID, producing valid CI bounds."""
+    data = generate_test_panel_data(
+        n_ids=30, n_treated=5, pre_periods=8, post_periods=3, x_num=1, seed=42,
+    )
+    m = Econformal(data, time="year", id="id", y_col="Y", treat_col="Treat",
+                   controls_col=["X1"])
+    with pytest.warns(UserWarning, match="JK+"):
+        result = m.conformal_inference(
+            econ_model="did", conformal_model="jk_plus", coverage=0.9,
+        )
+    treat_time = _get_treat_time(data)
+    post = result[result["year"] >= treat_time]
+    valid = post[post[LOWER_COL].notna() & post[UPPER_COL].notna()]
+    assert len(valid) > 0
+    assert (valid[UPPER_COL] >= valid[LOWER_COL]).all()
+
+
+# ── CV+ with SC path ───────────────────────────────────────────────────
+
+def test_cv_plus_with_sc():
+    """CV+ should work with SC (held-out residual path active)."""
+    data = generate_test_panel_data(
+        n_ids=30, n_treated=1, pre_periods=10, post_periods=3, x_num=0, seed=99,
+    )
+    m = Econformal(data, time="year", id="id", y_col="Y", treat_col="Treat")
+    result = m.conformal_inference(
+        econ_model="sc", conformal_model="cv_plus", coverage=0.9,
+        cv_folds=3, cv_strategy="block",
+    )
+    treat_time = _get_treat_time(data)
+    post = result[result["year"] >= treat_time]
+    valid = post[post[LOWER_COL].notna() & post[UPPER_COL].notna()]
+    assert len(valid) > 0
+    assert (valid[UPPER_COL] >= valid[LOWER_COL]).all()

@@ -6,6 +6,8 @@ Verifies:
   - SC CI is centered on effect estimate (not zero)
   - SC catches unbalanced panels
   - SDID zeta uses pooled std dev (matching Arkhangelsky et al. 2021)
+  - SDID with non-standard ID column name + controls works
+  - plot_ci_interval returns Figure and guards correctly
 """
 
 import pytest
@@ -160,3 +162,69 @@ def test_sdid_unit_weights_correctness():
     assert (ef.econ_model.unit_weights_ >= -1e-10).all()
     assert abs(ef.econ_model.time_weights_.sum() - 1.0) < 1e-10
     assert result.shape[0] > 0
+
+
+def test_sdid_nonstandard_id_with_controls():
+    """SDID should work when ID column is not literally 'id' and controls used."""
+    data = generate_test_panel_data(
+        n_ids=30, n_treated=5, pre_periods=5, post_periods=3, x_num=2, seed=42,
+    )
+    data = data.rename(columns={"id": "unit_id"})
+    ef = Econformal(data, time="year", id="unit_id", y_col="Y",
+                    treat_col="Treat", controls_col=["X1", "X2"])
+    result = ef.conformal_inference(
+        econ_model="sdid", conformal_model="split", coverage=0.9,
+    )
+    assert "effect" in result.columns
+    assert "90%_conf_lower" in result.columns
+    assert result.shape[0] > 0
+
+
+# ── Plot Tests ─────────────────────────────────────────────────────────
+
+def test_plot_ci_interval_returns_figure():
+    """plot_ci_interval should return a matplotlib Figure."""
+    data = generate_test_panel_data(
+        n_ids=30, n_treated=5, pre_periods=5, post_periods=3, x_num=0, seed=42,
+    )
+    ef = Econformal(data, time="year", id="id", y_col="Y", treat_col="Treat")
+    ef.conformal_inference(econ_model="did", conformal_model="split", coverage=0.9)
+    fig = ef.plot_ci_interval()
+    from matplotlib.figure import Figure
+    assert isinstance(fig, Figure)
+
+
+def test_plot_ci_interval_traditional():
+    """plot_ci_interval(traditional=True) should work with DID."""
+    data = generate_test_panel_data(
+        n_ids=30, n_treated=5, pre_periods=5, post_periods=3, x_num=0, seed=42,
+    )
+    ef = Econformal(data, time="year", id="id", y_col="Y", treat_col="Treat")
+    ef.conformal_inference(econ_model="did", conformal_model="split", coverage=0.9)
+    fig = ef.plot_ci_interval(traditional=True)
+    from matplotlib.figure import Figure
+    assert isinstance(fig, Figure)
+
+
+def test_plot_ci_interval_before_fit_raises():
+    """plot_ci_interval before conformal_inference should raise RuntimeError."""
+    data = generate_test_panel_data(
+        n_ids=10, n_treated=1, pre_periods=3, post_periods=2, x_num=0, seed=1,
+    )
+    ef = Econformal(data, time="year", id="id", y_col="Y", treat_col="Treat")
+    with pytest.raises(RuntimeError, match="conformal_inference"):
+        ef.plot_ci_interval()
+
+
+def test_plot_ci_interval_no_mutation():
+    """plot_ci_interval should not mutate self.results."""
+    data = generate_test_panel_data(
+        n_ids=30, n_treated=5, pre_periods=5, post_periods=3, x_num=0, seed=42,
+    )
+    ef = Econformal(data, time="year", id="id", y_col="Y", treat_col="Treat")
+    ef.conformal_inference(econ_model="did", conformal_model="split", coverage=0.9)
+    cols_before = list(ef.results.columns)
+    idx_before = ef.results.index.name
+    ef.plot_ci_interval()
+    assert list(ef.results.columns) == cols_before
+    assert ef.results.index.name == idx_before

@@ -122,68 +122,6 @@ def get_id_code(data, id_col):
 
 
 
-def identify_panel_data(data, year_col, id_col, y_col, controls_col, treat_col):
-    """
-    面板数据识别函数
-    该函数用于识别面板数据的处理组、处理时间，并新增一个id_code列，用于标识每个观测值。
-    
-    参数：
-    data : DataFrame - 包含面板数据的DataFrame
-    year_col : str   - 时间列名
-    id_col : str     - 个体ID列名
-    y_col : str      - 因变量列名
-    controls_col : list    - 自变量列名列表
-    treat_col : str  - 处理标识列名（0/1二值变量）
-    
-    返回：
-    processed_data : 新增id_code列的预处理数据
-    result_dict : 包含处理信息的字典
-        - 'treat_groups': 处理组id列表
-        - 'first_treat_dict': 按首次处理年份分组的处理组字典 {年份: [id列表]}
-    """
-    
-    # 1. 基础验证
-    required_cols = [year_col, id_col, y_col, treat_col] + controls_col
-    missing = set(required_cols) - set(data.columns)
-    if missing:
-        raise ValueError(f"缺失必要列: {missing}")
-    
-    if data[treat_col].nunique() != 2 or set(data[treat_col].unique()) != {0, 1}:
-        raise ValueError("处理列必须是0/1二值变量")
-    
-    # 复制数据避免修改原始数据
-    data = data.copy()
-    
-    # 2. 添加唯一数字ID编码
-    id_mapping = {id_val: idx + 1 for idx, id_val in enumerate(data[id_col].unique())}
-    data['id_code'] = data[id_col].map(id_mapping)
-    
-    # 3. 标识处理组和控制组
-    treat_groups = data.groupby(id_col)[treat_col].max()
-    treat_group_ids = treat_groups[treat_groups == 1].index.tolist()
-    
-    # 4. 获取处理组首次处理年份（按年份分组）
-    first_treat_data = data[data[treat_col] == 1].copy()
-    
-    # 找出每个处理组个体的首次处理年份
-    first_treat_df = first_treat_data.groupby(id_col)[year_col].min().reset_index()
-    
-    # 创建按年份分组的字典
-    year_grouped = defaultdict(list)
-    for _, row in first_treat_df.iterrows():
-        year_grouped[row[year_col]].append(row[id_col])
-    
-    # 将defaultdict转为常规dict
-    first_treat_dict = dict(year_grouped)
-    
-    # 5. 创建返回字典
-    result_dict = {
-        'treat_groups': treat_group_ids,
-        'first_treat_dict': first_treat_dict
-    }
-    
-    return data, result_dict
-
 
 
 # 检查数据是否为强面板数据，否则抛出警告
@@ -404,22 +342,3 @@ def validate_time_sortable(data, time_col):
 
 
 # 当用户选择SC时，检查treat_time和target_id
-def data_sc(data: pd.DataFrame, time: str, id: str, treat_time, target_id):
-    '''
-    1. 检查treat_time是否为None以及以及是否在data的time列中
-    2. 检查target_id是否为None以及是否在data的id列中
-    '''
-
-    'treat_time检查'
-    if treat_time is None:
-        raise ValueError("请输入处理时间不能为空")
-    if treat_time not in data[time].unique():
-        raise ValueError(f"处理时间 {treat_time} 不在数据{time}列中")
-
-    'target_id检查'
-    if target_id is None:
-        raise ValueError("请输入目标个体不能为空")
-    if target_id not in data[id].unique():
-        raise ValueError(f"目标个体 {target_id} 不在数据{id}列中")
-
-    return True
