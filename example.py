@@ -8,7 +8,7 @@ from econformal.tools.generate_data import generate_test_panel_data
 
 ####### SC ########
 
-'''# 用户初始化模型
+# 用户初始化模型
 data = pd.read_csv('ignore/data/smoking_panel.csv')
 model = Econformal(data=data, time='year', id='state', y_col='cigsale', controls_col=[], treat_col='Treat')
 # model = Econformal(data=data, time='year', id='id', y_col='Y', controls_col=[], treat_col='Treat')
@@ -22,13 +22,13 @@ print(result)
 # 用户查看结果
 fig = model.plot_ci_interval()
 plt.show()
+
+
 '''
-
-
 ###### DID ######
 data = generate_test_panel_data(
         n_ids=200,
-        n_treated=1,
+        n_treated=100,
         start_year=2010,
         pre_periods=15,
         post_periods=10,
@@ -51,6 +51,7 @@ print(result)
 # 用户查看结果
 fig = model.plot_ci_interval(traditional=True)
 plt.show()
+'''
 
 """SDID"""
 """

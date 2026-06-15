@@ -89,14 +89,12 @@ class Conformal(ConformalBase):
         '第一层循环：时间'
         for i, treat_time_conformal in enumerate(tqdm(time_list, desc='p_value_matrix计算: ')):
             
-            # 提取从起始到当前测试时间点（含）的所有数据。
-            # 使用 `<= treat_time_conformal` 而非原来的 `(< self.treat_time) | (== treat_time_conformal)`，
-            # 以确保 self.treat_time（及其中间处理时点）始终包含在数据中。
-            # 这对于 DID 至关重要：DID 需要实际的 treatment 时间来正确计算 relative_time，
-            # 若跳过 self.treat_time，DID 会误将 treat_time_conformal 当作最早处理时间，
-            # 导致 relative_time 映射偏移、event dummies 移位。
-            # SC/SDID 不受此影响（它们使用 treat_col 值而非 relative_time），
-            conformal_data_pro_0 = self.data[self.data[self.time] <= treat_time_conformal]
+            # 仅保留处理前数据 + 当前测试时间点。
+            # 使用 `(< self.treat_time) | (== treat_time_conformal)` 而非 `<= treat_time_conformal`，
+            # 确保增强数据集中只有 1 个处理后时期（当前测试期），避免多个处理后时期
+            # 的 effect 互相污染置换分布。DID 在子样本中会将测试期识别为"处理发生年"，
+            # 但这不影响共形推断——事件研究以 t=-1 为基期，测试的是该时间点的总缺口。
+            conformal_data_pro_0 = self.data[(self.data[self.time] < self.treat_time) | (self.data[self.time] == treat_time_conformal)]
 
             # 提前计算目标行的布尔 mask（对所有 null 都相同，避免内层循环重复扫描）
             target_mask = conformal_data_pro_0[self.id].isin(self.target_id_list) & (conformal_data_pro_0[self.time] == treat_time_conformal)
