@@ -273,7 +273,7 @@ Econformal(data, time='year', id='id', y_col='Y', treat_col='Treat', controls_co
 
 ## 项目状态
 
-- 当前版本 0.3.0，已发布 PyPI
+- 当前版本 0.4.0，已发布 PyPI
 - 已实现：DID (事件研究法)、SC (合成控制)、SDID (合成双重差分)、Full/Split/LOO/JK+/CV+ Conformal
 - SC 控制变量支持有限（增强矩阵法，需至少一个处理后时期）
 - SDID 支持控制变量（增强矩阵法，同 SC 模式），支持多处理单元
