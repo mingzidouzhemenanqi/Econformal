@@ -18,10 +18,10 @@ model = Econformal(data=data_sc, time='year', id='id', y_col='Y', treat_col='Tre
 nulls = np.linspace(-10, 10, 50)
 result = model.conformal_inference(econ_model='sc', conformal_model='full', nulls=nulls, coverage=0.9)
 print(result)
-fig = model.plot_ci_interval()
+fig = model.plot_ci_interval(traditional=True)
 plt.show()
 
-
+'''
 ###### DID + Full Conformal ######
 print("=" * 50)
 print("DID + Full Conformal")
@@ -54,3 +54,4 @@ result = model.conformal_inference(econ_model='sdid', conformal_model='full', nu
 print(result)
 fig = model.plot_ci_interval(traditional=True)
 plt.show()
+'''

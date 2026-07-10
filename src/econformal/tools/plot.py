@@ -40,7 +40,7 @@ def create_ci_plot(
     treat_time : scalar
         x-coordinate for the vertical treatment reference line.
     traditional : bool
-        If True, overlay traditional CI as a semi-transparent shaded band.
+        If True, overlay traditional CI as I-bar error bars (工字型区间).
     trad_lower_col, trad_upper_col : str or None
         Column names for traditional lower / upper bounds (required when
         ``traditional=True``).
@@ -90,46 +90,51 @@ def create_ci_plot(
     ax.plot(time_values, df["effect"], color="C1", linewidth=1.5,
             label="Effect")
 
-    # ------ 7. conformal I-bars ------
-    cap_width = (x_max - x_min) * 0.015
-    if cap_width <= 0:
-        cap_width = 0.2  # fallback for single time-point
+    # ------ 7. conformal shaded area (浅蓝色) ------
+    conformal_mask = df[ci_lower_col].notna() & df[ci_upper_col].notna()
+    if conformal_mask.any():
+        ax.fill_between(
+            time_values[conformal_mask],
+            df.loc[conformal_mask, ci_lower_col],
+            df.loc[conformal_mask, ci_upper_col],
+            alpha=0.2, color="lightskyblue",
+            label=f"Conformal CI ({int(coverage * 100)}%)",
+        )
 
-    for idx, row in df.iterrows():
-        low = row[ci_lower_col]
-        high = row[ci_upper_col]
-        if pd.isna(low) or pd.isna(high):
-            continue
-        # vertical stem
-        ax.plot([idx, idx], [low, high], color="C1", linewidth=1.5)
-        # top cap
-        ax.plot([idx - cap_width, idx + cap_width], [high, high],
-                color="C1", linewidth=1.5)
-        # bottom cap
-        ax.plot([idx - cap_width, idx + cap_width], [low, low],
-                color="C1", linewidth=1.5)
-
-    # ------ 8. traditional CI (shaded area) ------
+    # ------ 8. traditional CI (工字型 I-bars) ------
     if traditional:
         if trad_lower_col is None or trad_upper_col is None:
             raise ValueError(
                 "traditional=True requires trad_lower_col and trad_upper_col."
             )
-        trad_mask = df[trad_lower_col].notna() & df[trad_upper_col].notna()
-        if trad_mask.any():
-            ax.fill_between(
-                time_values[trad_mask],
-                df.loc[trad_mask, trad_lower_col],
-                df.loc[trad_mask, trad_upper_col],
-                alpha=0.15, color="gray",
-                label=f"Traditional CI ({int(coverage * 100)}%)",
-            )
+        cap_width = (x_max - x_min) * 0.015
+        if cap_width <= 0:
+            cap_width = 0.2  # fallback for single time-point
+
+        first_bar = True
+        for idx, row in df.iterrows():
+            low = row[trad_lower_col]
+            high = row[trad_upper_col]
+            if pd.isna(low) or pd.isna(high):
+                continue
+            lbl = f"Traditional CI ({int(coverage * 100)}%)" if first_bar else None
+            # vertical stem
+            ax.plot([idx, idx], [low, high], color="gray",
+                    linewidth=1.5, alpha=0.8, label=lbl)
+            # top cap
+            ax.plot([idx - cap_width, idx + cap_width], [high, high],
+                    color="gray", linewidth=1.5, alpha=0.8)
+            # bottom cap
+            ax.plot([idx - cap_width, idx + cap_width], [low, low],
+                    color="gray", linewidth=1.5, alpha=0.8)
+            first_bar = False
 
     # ------ 9. legend ------
     ax.legend(title=f"Coverage: {int(coverage * 100)}%")
 
     # ------ 10. axis limits & labels ------
-    ax.set_xlim(x_min, x_max)
+    x_pad = (x_max - x_min) * 0.05 or 1.0
+    ax.set_xlim(x_min - x_pad, x_max + x_pad)
     ax.set_ylim(y_min, y_max)
     ax.set_xlabel(time_col)
     ax.set_ylabel("Effect")
