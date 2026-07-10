@@ -8,6 +8,35 @@ _CONFORMAL_ALIASES = {
     'cv+': 'cv_plus',
 }
 
+# 反向映射：实际文件名 → 用户友好名称（供 list_* 函数使用）
+_CONFORMAL_REVERSE_ALIASES = {v: k for k, v in _CONFORMAL_ALIASES.items()}
+
+
+def list_conformal_models():
+    """返回可用的共形推断模型名称列表（用户友好名称）。"""
+    import os as _os
+    conformal_methods_dir = _os.path.join(
+        _os.path.dirname(_os.path.dirname(__file__)), 'conformal_methods'
+    )
+    models = [
+        f[:-3] for f in _os.listdir(conformal_methods_dir)
+        if f.endswith('.py') and f not in ('__init__.py', 'conformal_base.py')
+    ]
+    return [_CONFORMAL_REVERSE_ALIASES.get(m, m) for m in models]
+
+
+def list_econ_models():
+    """返回可用的计量经济学模型名称列表。"""
+    import os as _os
+    econ_methods_dir = _os.path.join(
+        _os.path.dirname(_os.path.dirname(__file__)), 'econometrics_methods'
+    )
+    models = [
+        f[:-3] for f in _os.listdir(econ_methods_dir)
+        if f.endswith('.py') and f != '__init__.py'
+    ]
+    return models
+
 
 def get_conformal_model(model_name: str) -> Type:
     """

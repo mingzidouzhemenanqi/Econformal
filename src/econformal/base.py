@@ -42,6 +42,30 @@ class Econformal:
         self.data = check.preprocess_data(data, self.id, self.time)
 
 
+    @staticmethod
+    def get_models():
+        """打印当前可用的计量经济学模型和共形推断方法。
+
+        可分别在创建 ``Econformal`` 实例前后调用：：
+
+            Econformal.get_models()          # 类级别调用
+            model = Econformal(...)
+            model.get_models()               # 实例级别调用
+        """
+        from .tools.model_registration import list_conformal_models, list_econ_models
+
+        econ_models = list_econ_models()
+        conformal_models = list_conformal_models()
+
+        print(
+            "Econometric methods: "
+            + ", ".join(repr(m) for m in econ_models)
+        )
+        print(
+            "Conformal inference methods: "
+            + ", ".join(repr(m) for m in conformal_models)
+        )
+
     def conformal_inference(self, econ_model: str, conformal_model: str,
                             coverage: float = 0.9,
                             nulls: list = None, split_rate=0.7, **kwargs):
